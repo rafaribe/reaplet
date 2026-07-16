@@ -1,12 +1,16 @@
 package main
 
 import (
+	"context"
 	"embed"
 	"fmt"
 	"io/fs"
 	"log/slog"
 	"net/http"
 	"os"
+	"os/signal"
+	"syscall"
+	"time"
 
 	"github.com/go-chi/chi/v5"
 	"github.com/go-chi/chi/v5/middleware"
@@ -53,6 +57,13 @@ func main() {
 	r.Use(middleware.Logger)
 	r.Use(middleware.Recoverer)
 	r.Use(middleware.Compress(5))
+	r.Use(middleware.Timeout(30 * time.Second))
+
+	// Enable CORS in dev mode
+	if os.Getenv("DEV") == "true" {
+		r.Use(handler.CORSMiddleware)
+		slog.Info("CORS enabled for development")
+	}
 
 	h := handler.NewHandler(nodeUC, actionUC)
 	h.RegisterRoutes(r)
@@ -65,9 +76,38 @@ func main() {
 	}
 	r.Handle("/*", http.FileServer(http.FS(staticFS)))
 
-	slog.Info("starting reaplet", "port", port)
-	if err := http.ListenAndServe(fmt.Sprintf(":%s", port), r); err != nil {
-		slog.Error("server failed", "error", err)
+	// Graceful shutdown
+	server := &http.Server{
+		Addr:         fmt.Sprintf(":%s", port),
+		Handler:      r,
+		ReadTimeout:  10 * time.Second,
+		WriteTimeout: 30 * time.Second,
+		IdleTimeout:  60 * time.Second,
+	}
+
+	// Start server in goroutine
+	go func() {
+		slog.Info("starting reaplet", "port", port)
+		if err := server.ListenAndServe(); err != nil && err != http.ErrServerClosed {
+			slog.Error("server failed", "error", err)
+			os.Exit(1)
+		}
+	}()
+
+	// Wait for interrupt signal
+	quit := make(chan os.Signal, 1)
+	signal.Notify(quit, syscall.SIGINT, syscall.SIGTERM)
+	sig := <-quit
+	slog.Info("shutting down", "signal", sig.String())
+
+	// Give in-flight requests 10s to complete
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+
+	if err := server.Shutdown(ctx); err != nil {
+		slog.Error("forced shutdown", "error", err)
 		os.Exit(1)
 	}
+
+	slog.Info("server stopped gracefully")
 }

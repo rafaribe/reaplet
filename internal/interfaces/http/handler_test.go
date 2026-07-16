@@ -7,9 +7,10 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"strings"
-	"testing"
 
 	"github.com/go-chi/chi/v5"
+	. "github.com/onsi/ginkgo/v2"
+	. "github.com/onsi/gomega"
 
 	"github.com/rafaribe/reaplet/internal/domain/model"
 	handler "github.com/rafaribe/reaplet/internal/interfaces/http"
@@ -107,215 +108,186 @@ func setupRouter(h *handler.Handler) *chi.Mux {
 	return r
 }
 
-// --- Tests ---
+// --- Specs ---
 
-func TestGetNodes_Success(t *testing.T) {
-	nodes := []model.Node{
-		{Name: "node-1", TotalImageSize: 1024},
-		{Name: "node-2", TotalImageSize: 2048},
-	}
-	h := setupHandler(nodes, nil)
-	r := setupRouter(h)
+var _ = Describe("HTTP Handler", func() {
+	Describe("GET /api/nodes", func() {
+		It("returns all nodes with 200", func() {
+			nodes := []model.Node{
+				{Name: "node-1", TotalImageSize: 1024},
+				{Name: "node-2", TotalImageSize: 2048},
+			}
+			h := setupHandler(nodes, nil)
+			r := setupRouter(h)
 
-	req := httptest.NewRequest(http.MethodGet, "/api/nodes", nil)
-	w := httptest.NewRecorder()
-	r.ServeHTTP(w, req)
+			req := httptest.NewRequest(http.MethodGet, "/api/nodes", nil)
+			w := httptest.NewRecorder()
+			r.ServeHTTP(w, req)
 
-	if w.Code != http.StatusOK {
-		t.Fatalf("expected 200, got %d", w.Code)
-	}
+			Expect(w.Code).To(Equal(http.StatusOK))
 
-	var result []model.Node
-	if err := json.NewDecoder(w.Body).Decode(&result); err != nil {
-		t.Fatalf("failed to decode response: %v", err)
-	}
-	if len(result) != 2 {
-		t.Fatalf("expected 2 nodes, got %d", len(result))
-	}
-}
+			var result []model.Node
+			Expect(json.NewDecoder(w.Body).Decode(&result)).To(Succeed())
+			Expect(result).To(HaveLen(2))
+		})
 
-func TestGetNodes_Error(t *testing.T) {
-	nodeUC := usecase.NewNodeUseCase(
-		&fakeNodeRepo{err: fmt.Errorf("k8s unreachable")},
-		&fakeGCRepo{},
-	)
-	actionUC := usecase.NewActionUseCase(&fakeEvictionRepo{}, &fakeImageRepo{})
-	h := handler.NewHandler(nodeUC, actionUC)
-	r := setupRouter(h)
+		It("returns 500 when repository fails", func() {
+			nodeUC := usecase.NewNodeUseCase(
+				&fakeNodeRepo{err: fmt.Errorf("k8s unreachable")},
+				&fakeGCRepo{},
+			)
+			actionUC := usecase.NewActionUseCase(&fakeEvictionRepo{}, &fakeImageRepo{})
+			h := handler.NewHandler(nodeUC, actionUC)
+			r := setupRouter(h)
 
-	req := httptest.NewRequest(http.MethodGet, "/api/nodes", nil)
-	w := httptest.NewRecorder()
-	r.ServeHTTP(w, req)
+			req := httptest.NewRequest(http.MethodGet, "/api/nodes", nil)
+			w := httptest.NewRecorder()
+			r.ServeHTTP(w, req)
 
-	if w.Code != http.StatusInternalServerError {
-		t.Fatalf("expected 500, got %d", w.Code)
-	}
-}
+			Expect(w.Code).To(Equal(http.StatusInternalServerError))
+		})
 
-func TestGetNode_Success(t *testing.T) {
-	nodes := []model.Node{{Name: "node-1", TotalImageSize: 5000}}
-	h := setupHandler(nodes, nil)
-	r := setupRouter(h)
+		It("returns Content-Type application/json", func() {
+			h := setupHandler([]model.Node{{Name: "n1"}}, nil)
+			r := setupRouter(h)
 
-	req := httptest.NewRequest(http.MethodGet, "/api/nodes/node-1", nil)
-	w := httptest.NewRecorder()
-	r.ServeHTTP(w, req)
+			req := httptest.NewRequest(http.MethodGet, "/api/nodes", nil)
+			w := httptest.NewRecorder()
+			r.ServeHTTP(w, req)
 
-	if w.Code != http.StatusOK {
-		t.Fatalf("expected 200, got %d", w.Code)
-	}
+			Expect(w.Header().Get("Content-Type")).To(Equal("application/json"))
+		})
+	})
 
-	var result model.Node
-	if err := json.NewDecoder(w.Body).Decode(&result); err != nil {
-		t.Fatalf("failed to decode response: %v", err)
-	}
-	if result.Name != "node-1" {
-		t.Errorf("expected node-1, got %s", result.Name)
-	}
-}
+	Describe("GET /api/nodes/{name}", func() {
+		It("returns the node with 200", func() {
+			nodes := []model.Node{{Name: "node-1", TotalImageSize: 5000}}
+			h := setupHandler(nodes, nil)
+			r := setupRouter(h)
 
-func TestGetNode_NotFound(t *testing.T) {
-	h := setupHandler([]model.Node{}, nil)
-	r := setupRouter(h)
+			req := httptest.NewRequest(http.MethodGet, "/api/nodes/node-1", nil)
+			w := httptest.NewRecorder()
+			r.ServeHTTP(w, req)
 
-	req := httptest.NewRequest(http.MethodGet, "/api/nodes/nonexistent", nil)
-	w := httptest.NewRecorder()
-	r.ServeHTTP(w, req)
+			Expect(w.Code).To(Equal(http.StatusOK))
 
-	if w.Code != http.StatusNotFound {
-		t.Fatalf("expected 404, got %d", w.Code)
-	}
-}
+			var result model.Node
+			Expect(json.NewDecoder(w.Body).Decode(&result)).To(Succeed())
+			Expect(result.Name).To(Equal("node-1"))
+		})
 
-func TestGetGCEvents_Success(t *testing.T) {
-	events := []model.GCEvent{
-		{Reason: "ImageGCSucceeded", Message: "freed 200MB"},
-	}
-	h := setupHandler(nil, events)
-	r := setupRouter(h)
+		It("returns 404 when node not found", func() {
+			h := setupHandler([]model.Node{}, nil)
+			r := setupRouter(h)
 
-	req := httptest.NewRequest(http.MethodGet, "/api/gc-events", nil)
-	w := httptest.NewRecorder()
-	r.ServeHTTP(w, req)
+			req := httptest.NewRequest(http.MethodGet, "/api/nodes/nonexistent", nil)
+			w := httptest.NewRecorder()
+			r.ServeHTTP(w, req)
 
-	if w.Code != http.StatusOK {
-		t.Fatalf("expected 200, got %d", w.Code)
-	}
-}
+			Expect(w.Code).To(Equal(http.StatusNotFound))
+		})
+	})
 
-func TestGetRecommendations_Success(t *testing.T) {
-	nodes := []model.Node{
-		{
-			Name: "node-1",
-			Images: []model.ContainerImage{
-				{Names: []string{"unused:v1"}, SizeBytes: 100 * 1024 * 1024, InUse: false},
-			},
-		},
-	}
-	h := setupHandler(nodes, nil)
-	r := setupRouter(h)
+	Describe("GET /api/gc-events", func() {
+		It("returns events with 200", func() {
+			events := []model.GCEvent{
+				{Reason: "ImageGCSucceeded", Message: "freed 200MB"},
+			}
+			h := setupHandler(nil, events)
+			r := setupRouter(h)
 
-	req := httptest.NewRequest(http.MethodGet, "/api/recommendations", nil)
-	w := httptest.NewRecorder()
-	r.ServeHTTP(w, req)
+			req := httptest.NewRequest(http.MethodGet, "/api/gc-events", nil)
+			w := httptest.NewRecorder()
+			r.ServeHTTP(w, req)
 
-	if w.Code != http.StatusOK {
-		t.Fatalf("expected 200, got %d", w.Code)
-	}
+			Expect(w.Code).To(Equal(http.StatusOK))
+		})
+	})
 
-	var result []model.ImageRecommendation
-	if err := json.NewDecoder(w.Body).Decode(&result); err != nil {
-		t.Fatalf("failed to decode response: %v", err)
-	}
-	if len(result) != 1 {
-		t.Fatalf("expected 1 recommendation, got %d", len(result))
-	}
-}
+	Describe("GET /api/recommendations", func() {
+		It("returns recommendations with 200", func() {
+			nodes := []model.Node{
+				{
+					Name: "node-1",
+					Images: []model.ContainerImage{
+						{Names: []string{"unused:v1"}, SizeBytes: 100 * 1024 * 1024, InUse: false},
+					},
+				},
+			}
+			h := setupHandler(nodes, nil)
+			r := setupRouter(h)
 
-func TestEvictPod_Success(t *testing.T) {
-	h := setupHandler(nil, nil)
-	r := setupRouter(h)
+			req := httptest.NewRequest(http.MethodGet, "/api/recommendations", nil)
+			w := httptest.NewRecorder()
+			r.ServeHTTP(w, req)
 
-	body := `{"PodName":"heavy-pod","Namespace":"default","NodeName":"node-1","Reason":"test"}`
-	req := httptest.NewRequest(http.MethodPost, "/api/evict", strings.NewReader(body))
-	req.Header.Set("Content-Type", "application/json")
-	w := httptest.NewRecorder()
-	r.ServeHTTP(w, req)
+			Expect(w.Code).To(Equal(http.StatusOK))
 
-	if w.Code != http.StatusOK {
-		t.Fatalf("expected 200, got %d: %s", w.Code, w.Body.String())
-	}
+			var result []model.ImageRecommendation
+			Expect(json.NewDecoder(w.Body).Decode(&result)).To(Succeed())
+			Expect(result).To(HaveLen(1))
+		})
+	})
 
-	var result model.EvictionResult
-	if err := json.NewDecoder(w.Body).Decode(&result); err != nil {
-		t.Fatalf("failed to decode: %v", err)
-	}
-	if !result.Success {
-		t.Error("expected success")
-	}
-}
+	Describe("POST /api/evict", func() {
+		It("evicts a pod successfully", func() {
+			h := setupHandler(nil, nil)
+			r := setupRouter(h)
 
-func TestEvictPod_BadRequest(t *testing.T) {
-	h := setupHandler(nil, nil)
-	r := setupRouter(h)
+			body := `{"PodName":"heavy-pod","Namespace":"default","NodeName":"node-1","Reason":"test"}`
+			req := httptest.NewRequest(http.MethodPost, "/api/evict", strings.NewReader(body))
+			req.Header.Set("Content-Type", "application/json")
+			w := httptest.NewRecorder()
+			r.ServeHTTP(w, req)
 
-	req := httptest.NewRequest(http.MethodPost, "/api/evict", strings.NewReader("invalid json"))
-	req.Header.Set("Content-Type", "application/json")
-	w := httptest.NewRecorder()
-	r.ServeHTTP(w, req)
+			Expect(w.Code).To(Equal(http.StatusOK))
 
-	if w.Code != http.StatusBadRequest {
-		t.Fatalf("expected 400, got %d", w.Code)
-	}
-}
+			var result model.EvictionResult
+			Expect(json.NewDecoder(w.Body).Decode(&result)).To(Succeed())
+			Expect(result.Success).To(BeTrue())
+		})
 
-func TestRemoveImage_Success(t *testing.T) {
-	h := setupHandler(nil, nil)
-	r := setupRouter(h)
+		It("returns 400 for invalid JSON body", func() {
+			h := setupHandler(nil, nil)
+			r := setupRouter(h)
 
-	body := `{"NodeName":"node-1","ImageRef":"old:v1"}`
-	req := httptest.NewRequest(http.MethodPost, "/api/remove-image", strings.NewReader(body))
-	req.Header.Set("Content-Type", "application/json")
-	w := httptest.NewRecorder()
-	r.ServeHTTP(w, req)
+			req := httptest.NewRequest(http.MethodPost, "/api/evict", strings.NewReader("invalid json"))
+			req.Header.Set("Content-Type", "application/json")
+			w := httptest.NewRecorder()
+			r.ServeHTTP(w, req)
 
-	if w.Code != http.StatusOK {
-		t.Fatalf("expected 200, got %d: %s", w.Code, w.Body.String())
-	}
+			Expect(w.Code).To(Equal(http.StatusBadRequest))
+		})
+	})
 
-	var result model.ImageRemovalResult
-	if err := json.NewDecoder(w.Body).Decode(&result); err != nil {
-		t.Fatalf("failed to decode: %v", err)
-	}
-	if !result.Success {
-		t.Error("expected success")
-	}
-}
+	Describe("POST /api/remove-image", func() {
+		It("removes an image successfully", func() {
+			h := setupHandler(nil, nil)
+			r := setupRouter(h)
 
-func TestRemoveImage_BadRequest(t *testing.T) {
-	h := setupHandler(nil, nil)
-	r := setupRouter(h)
+			body := `{"NodeName":"node-1","ImageRef":"old:v1"}`
+			req := httptest.NewRequest(http.MethodPost, "/api/remove-image", strings.NewReader(body))
+			req.Header.Set("Content-Type", "application/json")
+			w := httptest.NewRecorder()
+			r.ServeHTTP(w, req)
 
-	req := httptest.NewRequest(http.MethodPost, "/api/remove-image", strings.NewReader("{invalid"))
-	req.Header.Set("Content-Type", "application/json")
-	w := httptest.NewRecorder()
-	r.ServeHTTP(w, req)
+			Expect(w.Code).To(Equal(http.StatusOK))
 
-	if w.Code != http.StatusBadRequest {
-		t.Fatalf("expected 400, got %d", w.Code)
-	}
-}
+			var result model.ImageRemovalResult
+			Expect(json.NewDecoder(w.Body).Decode(&result)).To(Succeed())
+			Expect(result.Success).To(BeTrue())
+		})
 
-func TestContentTypeJSON(t *testing.T) {
-	h := setupHandler([]model.Node{{Name: "n1"}}, nil)
-	r := setupRouter(h)
+		It("returns 400 for invalid JSON body", func() {
+			h := setupHandler(nil, nil)
+			r := setupRouter(h)
 
-	req := httptest.NewRequest(http.MethodGet, "/api/nodes", nil)
-	w := httptest.NewRecorder()
-	r.ServeHTTP(w, req)
+			req := httptest.NewRequest(http.MethodPost, "/api/remove-image", strings.NewReader("{invalid"))
+			req.Header.Set("Content-Type", "application/json")
+			w := httptest.NewRecorder()
+			r.ServeHTTP(w, req)
 
-	ct := w.Header().Get("Content-Type")
-	if ct != "application/json" {
-		t.Errorf("expected application/json, got %s", ct)
-	}
-}
+			Expect(w.Code).To(Equal(http.StatusBadRequest))
+		})
+	})
+})
