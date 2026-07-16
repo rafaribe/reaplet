@@ -32,9 +32,6 @@ jobs:
         with:
           experimental: true
 
-      - name: Build frontend
-        run: mise run ui-build
-
       - name: Tidy modules
         run: go mod tidy
 

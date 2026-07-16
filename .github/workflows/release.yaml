@@ -1,45 +1,83 @@
 ---
 # yaml-language-server: $schema=https://json.schemastore.org/github-workflow.json
-name: Release Please
+name: Release
 
 on:
   push:
     branches: [main]
+    paths-ignore: ["**.md"]
 
 permissions:
   contents: write
-  pull-requests: write
+  packages: write
+  id-token: write
+
+concurrency:
+  group: release
+  cancel-in-progress: false
 
 jobs:
-  release-please:
+  release:
+    name: Tag, Release & Push Image
     runs-on: ubuntu-24.04
-    outputs:
-      release_created: ${{ steps.release.outputs.release_created }}
-      tag_name: ${{ steps.release.outputs.tag_name }}
-      sha: ${{ steps.release.outputs.sha }}
-    steps:
-      - uses: googleapis/release-please-action@v4
-        id: release
-        with:
-          config-file: release-please-config.json
-          manifest-file: .release-please-manifest.json
-
-  build-and-push:
-    name: Build and Push Image
-    needs: release-please
-    if: ${{ needs.release-please.outputs.release_created == 'true' }}
-    runs-on: ubuntu-24.04
-    permissions:
-      contents: read
-      id-token: write
-      packages: write
     steps:
       - name: Checkout
         uses: actions/checkout@v4
         with:
-          persist-credentials: false
+          fetch-depth: 0
+
+      - name: Determine next version
+        id: version
+        uses: paulhatch/semantic-version@v5.4.0
+        with:
+          tag_prefix: ""
+          major_pattern: "(BREAKING CHANGE|feat!)"
+          minor_pattern: "feat"
+          version_format: "${major}.${minor}.${patch}"
+
+      - name: Check if version changed
+        id: check
+        run: |
+          if git rev-parse "${{ steps.version.outputs.version_tag }}" >/dev/null 2>&1; then
+            echo "exists=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "exists=false" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Create Git tag
+        if: steps.check.outputs.exists == 'false'
+        run: |
+          git tag "${{ steps.version.outputs.version_tag }}"
+          git push origin "${{ steps.version.outputs.version_tag }}"
+
+      - name: Generate release notes
+        if: steps.check.outputs.exists == 'false'
+        id: notes
+        run: |
+          PREV_TAG=$(git tag --sort=-v:refname | grep -v "^${{ steps.version.outputs.version_tag }}$" | head -1)
+          if [ -z "$PREV_TAG" ]; then
+            RANGE="HEAD"
+          else
+            RANGE="${PREV_TAG}..HEAD"
+          fi
+          NOTES=$(git log "$RANGE" --pretty=format:"- %s (%h)" --no-merges)
+          {
+            echo "notes<<EOF"
+            echo "$NOTES"
+            echo "EOF"
+          } >> "$GITHUB_OUTPUT"
+
+      - name: Create GitHub Release
+        if: steps.check.outputs.exists == 'false'
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ steps.version.outputs.version_tag }}
+          name: ${{ steps.version.outputs.version_tag }}
+          body: ${{ steps.notes.outputs.notes }}
+          generate_release_notes: false
 
       - name: Setup Mise
+        if: steps.check.outputs.exists == 'false'
         uses: jdx/mise-action@v2
         with:
           cache: false
@@ -47,18 +85,21 @@ jobs:
           install: false
 
       - name: Resolve versions
+        if: steps.check.outputs.exists == 'false'
         id: versions
         run: |
           echo "go-version=$(mise config get tools.go)" >> "$GITHUB_OUTPUT"
-          echo "node-version=$(mise config get tools.node)" >> "$GITHUB_OUTPUT"
 
       - name: Set up QEMU
+        if: steps.check.outputs.exists == 'false'
         uses: docker/setup-qemu-action@v3
 
       - name: Set up Docker Buildx
+        if: steps.check.outputs.exists == 'false'
         uses: docker/setup-buildx-action@v3
 
       - name: Log in to GHCR
+        if: steps.check.outputs.exists == 'false'
         uses: docker/login-action@v3
         with:
           registry: ghcr.io
@@ -66,16 +107,18 @@ jobs:
           password: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Extract metadata
+        if: steps.check.outputs.exists == 'false'
         id: meta
         uses: docker/metadata-action@v5
         with:
           images: ghcr.io/${{ github.repository }}
           tags: |
-            type=semver,pattern={{version}},value=${{ needs.release-please.outputs.tag_name }}
-            type=semver,pattern={{major}}.{{minor}},value=${{ needs.release-please.outputs.tag_name }}
-            type=raw,value=rolling
+            type=raw,value=${{ steps.version.outputs.version_tag }}
+            type=semver,pattern={{major}}.{{minor}},value=${{ steps.version.outputs.version_tag }}
+            type=raw,value=latest
 
       - name: Build and push
+        if: steps.check.outputs.exists == 'false'
         uses: docker/build-push-action@v6
         with:
           context: .
@@ -84,9 +127,8 @@ jobs:
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}
           build-args: |
-            VERSION=${{ needs.release-please.outputs.tag_name }}
-            REVISION=${{ needs.release-please.outputs.sha }}
+            VERSION=${{ steps.version.outputs.version_tag }}
+            REVISION=${{ github.sha }}
             GO_VERSION=${{ steps.versions.outputs.go-version }}
-            NODE_VERSION=${{ steps.versions.outputs.node-version }}
           cache-from: type=gha
           cache-to: type=gha,mode=max

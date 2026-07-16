@@ -1,12 +1,6 @@
 # Go
 /reaplet
 coverage.out
-/cmd/reaplet/static/*
-!/cmd/reaplet/static/.gitkeep
-
-# Node
-web/node_modules/
-web/dist/
 
 # IDE
 .vscode/
