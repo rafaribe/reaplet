@@ -89,7 +89,6 @@ jobs:
         id: versions
         run: |
           echo "go-version=$(mise config get tools.go)" >> "$GITHUB_OUTPUT"
-          echo "node-version=$(mise config get tools.node)" >> "$GITHUB_OUTPUT"
 
       - name: Set up QEMU
         if: steps.check.outputs.exists == 'false'
@@ -131,6 +130,5 @@ jobs:
             VERSION=${{ steps.version.outputs.version_tag }}
             REVISION=${{ github.sha }}
             GO_VERSION=${{ steps.versions.outputs.go-version }}
-            NODE_VERSION=${{ steps.versions.outputs.node-version }}
           cache-from: type=gha
           cache-to: type=gha,mode=max

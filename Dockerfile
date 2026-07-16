@@ -1,17 +1,7 @@
 # syntax=docker/dockerfile:1
 
 ARG GO_VERSION=1.26
-ARG NODE_VERSION=22
 
-# ---- UI build -------------------------------------------------------------
-FROM node:${NODE_VERSION}-alpine AS ui
-WORKDIR /ui
-COPY web/package.json web/package-lock.json ./
-RUN npm ci
-COPY web/ ./
-RUN npm run build
-
-# ---- Go build -------------------------------------------------------------
 FROM golang:${GO_VERSION}-alpine AS builder
 
 ARG TARGETOS
@@ -30,10 +20,8 @@ RUN go mod download
 COPY cmd/ cmd/
 COPY internal/ internal/
 
-# Overlay the freshly built UI into the embedded static dir.
-COPY --from=ui /ui/../cmd/reaplet/static/ cmd/reaplet/static/
-
 # Static, stripped, reproducible binary.
+# The frontend (cmd/reaplet/static/) is embedded at compile time — no build step needed.
 RUN CGO_ENABLED=0 GOOS=${TARGETOS:-linux} GOARCH=${TARGETARCH} \
     go build -trimpath \
     -ldflags "-s -w -X main.version=${VERSION} -X main.commit=${REVISION}" \

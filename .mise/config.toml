@@ -1,18 +1,15 @@
 [tools]
 go = "1.26"
-node = "22"
 
 [tasks.build]
-description = "Build the full project (frontend + backend)"
-depends = ["ui-build"]
+description = "Build the project"
 run = """
 CGO_ENABLED=0 go build -trimpath -ldflags='-s -w' -o reaplet ./cmd/reaplet
 """
 
 [tasks.dev]
 description = "Run the backend in development mode"
-depends = ["ui-build"]
-run = "go run ./cmd/reaplet"
+run = "DEV=true go run ./cmd/reaplet"
 
 [tasks.test]
 description = "Run Go tests with Ginkgo"
@@ -20,9 +17,7 @@ run = "ginkgo -r -race --coverprofile=coverage.out --output-dir=. ./... && go to
 
 [tasks.lint]
 description = "Run Go linting"
-run = """
-go vet ./...
-"""
+run = "go vet ./..."
 
 [tasks.tidy]
 description = "Tidy Go modules"
@@ -34,22 +29,6 @@ run = """
 go mod tidy
 git diff --exit-code go.mod go.sum
 """
-
-[tasks.ui-install]
-description = "Install frontend dependencies"
-dir = "web"
-run = "npm install"
-
-[tasks.ui-build]
-description = "Build frontend for embedding"
-depends = ["ui-install"]
-dir = "web"
-run = "npm run build"
-
-[tasks.ui-dev]
-description = "Run frontend dev server with hot reload"
-dir = "web"
-run = "npm run dev"
 
 [tasks.docker-build]
 description = "Build the Docker image locally"
@@ -80,8 +59,4 @@ kubectl apply -f deploy/daemonset.yaml
 
 [tasks.clean]
 description = "Remove build artifacts"
-run = """
-rm -f reaplet
-rm -rf cmd/reaplet/static/*
-echo '<!-- placeholder -->' > cmd/reaplet/static/index.html
-"""
+run = "rm -f reaplet coverage.out"

@@ -35,9 +35,6 @@ jobs:
         with:
           experimental: true
 
-      - name: Build frontend
-        run: mise run ui-build
-
       - name: Tidy modules
         run: go mod tidy
 
@@ -55,22 +52,3 @@ jobs:
 
       - name: Run tests
         run: mise run test
-
-  ui:
-    name: UI Build
-    runs-on: ubuntu-24.04
-    permissions:
-      contents: read
-    steps:
-      - name: Checkout
-        uses: actions/checkout@v4
-        with:
-          persist-credentials: false
-
-      - name: Setup Mise
-        uses: jdx/mise-action@v2
-        with:
-          experimental: true
-
-      - name: Build UI
-        run: mise run ui-build
