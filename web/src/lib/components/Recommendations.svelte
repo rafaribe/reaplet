@@ -1,79 +1,93 @@
 <script>
-  import { fetchRecommendations, removeImage, formatBytes } from '../api.js';
+  import { dataStore } from '../stores/data.svelte.js';
+  import { toastStore } from '../stores/toast.svelte.js';
+  import { removeImage, formatBytes } from '../api.js';
 
-  let recommendations = $state([]);
-  let loading = $state(true);
-  let error = $state(null);
-  let actionResult = $state(null);
-
-  async function load() {
-    loading = true;
-    error = null;
-    try {
-      recommendations = await fetchRecommendations();
-    } catch (e) {
-      error = e.message;
-    } finally {
-      loading = false;
-    }
-  }
+  let removing = $state(null); // imageRef currently being removed
 
   async function handleRemove(rec) {
-    if (!confirm(`Remove image ${rec.Image.Names?.[0]} from ${rec.NodeName}?\n\nThis will free ${formatBytes(rec.SavingsBytes)}.`)) {
+    const imageName = rec.Image.Names?.[0] || rec.Image.Names?.[1] || 'unnamed';
+    if (!confirm(`Remove image ${imageName} from ${rec.NodeName}?\n\nThis will free ${formatBytes(rec.SavingsBytes)}.`)) {
       return;
     }
-    actionResult = null;
+
+    removing = imageName;
     try {
-      const result = await removeImage(rec.Image.Names[0], rec.NodeName);
-      actionResult = result;
+      const result = await removeImage(imageName, rec.NodeName);
       if (result.Success) {
-        await load(); // refresh
+        toastStore.success(`Removed ${imageName} — freed ${formatBytes(result.FreedBytes)}`);
+        await dataStore.refreshRecommendations();
+        await dataStore.refreshNodes();
+      } else {
+        toastStore.error(`Failed: ${result.Error}`);
       }
     } catch (e) {
-      actionResult = { Success: false, Error: e.message };
+      toastStore.error(`Error: ${e.message}`);
+    } finally {
+      removing = null;
     }
   }
 
-  load();
+  function totalSavings(recs) {
+    return recs.reduce((sum, r) => sum + r.SavingsBytes, 0);
+  }
 </script>
 
 <div class="recommendations">
-  <div class="header">
-    <h2>Image Recommendations</h2>
-    <button class="refresh" onclick={load}>↻ Refresh</button>
-  </div>
-
-  {#if actionResult}
-    <div class="result" class:success={actionResult.Success} class:failure={!actionResult.Success}>
-      {#if actionResult.Success}
-        ✓ Removed — freed {formatBytes(actionResult.FreedBytes)}
-      {:else}
-        ✗ Failed: {actionResult.Error}
-      {/if}
+  {#if dataStore.loading.recommendations && dataStore.recommendations.length === 0}
+    <div class="skeleton-list">
+      {#each [1,2,3] as _}
+        <div class="skeleton-card">
+          <div class="skeleton" style="width: 60%; height: 1rem;"></div>
+          <div class="skeleton" style="width: 40%; height: 0.8rem; margin-top: 0.5rem;"></div>
+        </div>
+      {/each}
     </div>
-  {/if}
-
-  {#if loading}
-    <p class="status">Analyzing images...</p>
-  {:else if error}
-    <p class="status error">{error}</p>
-  {:else if recommendations.length === 0}
-    <p class="status">No recommendations — all images are in use 🎉</p>
+  {:else if dataStore.errors.recommendations}
+    <div class="error-state">
+      <span class="error-icon">⚠️</span>
+      <p class="error-msg">{dataStore.errors.recommendations}</p>
+      <button class="retry-btn" onclick={() => dataStore.refreshRecommendations()}>Retry</button>
+    </div>
+  {:else if dataStore.recommendations.length === 0}
+    <div class="empty-state">
+      <span class="empty-icon">✨</span>
+      <p>All images are in use — nothing to clean up!</p>
+    </div>
   {:else}
-    <p class="summary">
-      {recommendations.length} images can be removed, saving {formatBytes(recommendations.reduce((sum, r) => sum + r.SavingsBytes, 0))}
-    </p>
+    <div class="summary-banner">
+      <div class="summary-stat">
+        <span class="stat-number">{dataStore.recommendations.length}</span>
+        <span class="stat-label">unused images</span>
+      </div>
+      <div class="summary-divider"></div>
+      <div class="summary-stat">
+        <span class="stat-number">{formatBytes(totalSavings(dataStore.recommendations))}</span>
+        <span class="stat-label">reclaimable</span>
+      </div>
+    </div>
+
     <div class="rec-list">
-      {#each recommendations as rec}
-        <div class="rec-card">
+      {#each dataStore.recommendations as rec, i}
+        <div class="rec-card" style="animation-delay: {i * 40}ms">
           <div class="rec-info">
-            <span class="image-name">{rec.Image.Names?.[0] || 'unnamed'}</span>
-            <span class="rec-meta">
-              {rec.NodeName} · {formatBytes(rec.SavingsBytes)} · {rec.Reason}
-            </span>
+            <code class="rec-image">{rec.Image.Names?.[0] || 'unnamed'}</code>
+            <div class="rec-meta">
+              <span class="meta-node">🖥️ {rec.NodeName}</span>
+              <span class="meta-size">📦 {formatBytes(rec.SavingsBytes)}</span>
+              <span class="meta-reason">💡 {rec.Reason}</span>
+            </div>
           </div>
-          <button class="remove-btn" onclick={() => handleRemove(rec)}>
-            Remove
+          <button
+            class="remove-btn"
+            onclick={() => handleRemove(rec)}
+            disabled={removing === (rec.Image.Names?.[0] || '')}
+          >
+            {#if removing === (rec.Image.Names?.[0] || '')}
+              <span class="btn-spinner">↻</span>
+            {:else}
+              Remove
+            {/if}
           </button>
         </div>
       {/each}
@@ -82,68 +96,152 @@
 </div>
 
 <style>
-  .header {
-    display: flex;
-    justify-content: space-between;
-    align-items: center;
+  .skeleton-list { display: grid; gap: var(--space-md); }
+
+  .skeleton-card {
+    background: var(--bg-surface);
+    border: 1px solid var(--border-muted);
+    border-radius: var(--radius-md);
+    padding: var(--space-md);
   }
 
-  .refresh {
-    background: #1d2125;
-    border: 1px solid #2f3336;
-    color: #e7e9ea;
-    padding: 0.4rem 0.8rem;
-    border-radius: 4px;
+  .error-state, .empty-state {
+    text-align: center;
+    padding: var(--space-2xl);
+    color: var(--text-muted);
+  }
+
+  .error-icon, .empty-icon { font-size: 2.5rem; display: block; margin-bottom: var(--space-md); }
+  .error-msg { color: var(--danger); }
+
+  .retry-btn {
+    background: var(--danger-muted);
+    border: 1px solid var(--danger);
+    color: var(--danger);
+    padding: var(--space-sm) var(--space-md);
+    border-radius: var(--radius-md);
     cursor: pointer;
   }
 
-  .refresh:hover { background: #2f3336; }
-  .status { color: #71767b; }
-  .status.error { color: #f4212e; }
-
-  .summary { color: #f59e0b; margin-bottom: 1rem; }
-
-  .result {
-    padding: 0.5rem 1rem;
-    border-radius: 4px;
-    margin-bottom: 1rem;
+  /* Summary */
+  .summary-banner {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: var(--space-lg);
+    padding: var(--space-md) var(--space-lg);
+    background: var(--warning-muted);
+    border: 1px solid var(--warning);
+    border-radius: var(--radius-lg);
+    margin-bottom: var(--space-lg);
   }
 
-  .result.success { background: #00ba7c22; color: #00ba7c; }
-  .result.failure { background: #f4212e22; color: #f4212e; }
+  .summary-stat {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 2px;
+  }
+
+  .stat-number {
+    font-size: 1.3rem;
+    font-weight: 700;
+    color: var(--warning);
+  }
+
+  .stat-label {
+    font-size: 0.72rem;
+    color: var(--text-muted);
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+  }
+
+  .summary-divider {
+    width: 1px;
+    height: 2rem;
+    background: var(--border-default);
+  }
+
+  /* List */
+  .rec-list {
+    display: grid;
+    gap: var(--space-sm);
+  }
 
   .rec-card {
     display: flex;
     justify-content: space-between;
     align-items: center;
-    background: #16181c;
-    border: 1px solid #2f3336;
-    border-radius: 8px;
-    padding: 0.75rem 1rem;
-    margin-bottom: 0.5rem;
+    gap: var(--space-md);
+    background: var(--bg-surface);
+    border: 1px solid var(--border-muted);
+    border-radius: var(--radius-md);
+    padding: var(--space-sm) var(--space-md);
+    animation: fadeIn var(--transition-slow) both;
+    transition: border-color var(--transition-fast);
   }
 
-  .rec-info { display: flex; flex-direction: column; gap: 0.25rem; overflow: hidden; }
+  .rec-card:hover {
+    border-color: var(--border-default);
+  }
 
-  .image-name {
-    font-family: monospace;
-    font-size: 0.85rem;
+  .rec-info {
+    min-width: 0;
+    flex: 1;
+  }
+
+  .rec-image {
+    font-family: var(--font-mono);
+    font-size: 0.82rem;
+    color: var(--text-primary);
+    display: block;
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;
   }
 
-  .rec-meta { font-size: 0.75rem; color: #71767b; }
-
-  .remove-btn {
-    background: #f4212e22;
-    border: 1px solid #f4212e44;
-    color: #f4212e;
-    padding: 0.3rem 0.8rem;
-    border-radius: 4px;
-    cursor: pointer;
-    white-space: nowrap;
+  .rec-meta {
+    display: flex;
+    gap: var(--space-md);
+    margin-top: var(--space-xs);
+    font-size: 0.72rem;
+    color: var(--text-muted);
+    flex-wrap: wrap;
   }
 
-  .remove-btn:hover { background: #f4212e44; }
+  .remove-btn {
+    flex-shrink: 0;
+    background: var(--danger-muted);
+    border: 1px solid var(--danger);
+    color: var(--danger);
+    padding: var(--space-xs) var(--space-md);
+    border-radius: var(--radius-md);
+    cursor: pointer;
+    font-size: 0.8rem;
+    font-weight: 600;
+    transition: all var(--transition-fast);
+    min-width: 5rem;
+    text-align: center;
+  }
+
+  .remove-btn:hover:not(:disabled) {
+    background: var(--danger);
+    color: var(--text-inverse);
+  }
+
+  .remove-btn:disabled {
+    opacity: 0.6;
+    cursor: not-allowed;
+  }
+
+  .btn-spinner {
+    display: inline-block;
+    animation: spin 1s linear infinite;
+  }
+
+  @media (max-width: 640px) {
+    .rec-card { flex-direction: column; align-items: stretch; }
+    .remove-btn { align-self: flex-end; }
+    .summary-banner { gap: var(--space-md); }
+  }
 </style>

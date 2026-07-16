@@ -3,6 +3,7 @@ package http
 import (
 	"encoding/json"
 	"net/http"
+	"time"
 
 	"github.com/go-chi/chi/v5"
 	"github.com/rafaribe/reaplet/internal/domain/model"
@@ -23,12 +24,21 @@ func NewHandler(nodeUC *usecase.NodeUseCase, actionUC *usecase.ActionUseCase) *H
 
 func (h *Handler) RegisterRoutes(r chi.Router) {
 	r.Route("/api", func(r chi.Router) {
+		r.Get("/health", h.Health)
 		r.Get("/nodes", h.GetNodes)
 		r.Get("/nodes/{name}", h.GetNode)
 		r.Get("/gc-events", h.GetGCEvents)
 		r.Get("/recommendations", h.GetRecommendations)
 		r.Post("/evict", h.EvictPod)
 		r.Post("/remove-image", h.RemoveImage)
+	})
+}
+
+// Health returns a simple health check response.
+func (h *Handler) Health(w http.ResponseWriter, _ *http.Request) {
+	writeJSON(w, http.StatusOK, map[string]any{
+		"status":    "ok",
+		"timestamp": time.Now().UTC().Format(time.RFC3339),
 	})
 }
 
@@ -109,4 +119,19 @@ func writeJSON(w http.ResponseWriter, status int, v any) {
 
 func writeError(w http.ResponseWriter, status int, message string) {
 	writeJSON(w, status, map[string]string{"error": message})
+}
+
+// CORSMiddleware allows cross-origin requests in development.
+func CORSMiddleware(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Access-Control-Allow-Origin", "*")
+		w.Header().Set("Access-Control-Allow-Methods", "GET, POST, OPTIONS")
+		w.Header().Set("Access-Control-Allow-Headers", "Content-Type")
+
+		if r.Method == http.MethodOptions {
+			w.WriteHeader(http.StatusNoContent)
+			return
+		}
+		next.ServeHTTP(w, r)
+	})
 }

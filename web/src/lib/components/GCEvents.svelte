@@ -1,56 +1,61 @@
 <script>
-  import { fetchGCEvents } from '../api.js';
-
-  let events = $state([]);
-  let loading = $state(true);
-  let error = $state(null);
-
-  async function load() {
-    loading = true;
-    error = null;
-    try {
-      events = await fetchGCEvents();
-    } catch (e) {
-      error = e.message;
-    } finally {
-      loading = false;
-    }
-  }
+  import { dataStore } from '../stores/data.svelte.js';
 
   function formatTime(ts) {
     if (!ts) return 'Unknown';
-    return new Date(ts).toLocaleString();
+    const d = new Date(ts);
+    return d.toLocaleString([], { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' });
   }
 
-  function reasonColor(reason) {
+  function reasonType(reason) {
     if (reason.includes('Failed') || reason.includes('Pressure')) return 'critical';
     if (reason.includes('Succeeded') || reason.includes('NoDisk')) return 'success';
-    return '';
+    return 'neutral';
   }
 
-  load();
+  function reasonIcon(reason) {
+    if (reason.includes('Failed')) return '❌';
+    if (reason.includes('Pressure')) return '⚠️';
+    if (reason.includes('Succeeded')) return '✅';
+    if (reason.includes('NoDisk')) return '🎉';
+    return '📋';
+  }
 </script>
 
 <div class="gc-events">
-  <div class="header">
-    <h2>Garbage Collection Events</h2>
-    <button class="refresh" onclick={load}>↻ Refresh</button>
-  </div>
-
-  {#if loading}
-    <p class="status">Loading events...</p>
-  {:else if error}
-    <p class="status error">{error}</p>
-  {:else if events.length === 0}
-    <p class="status">No GC events found. This means kubelet hasn't needed to garbage collect recently.</p>
+  {#if dataStore.loading.gcEvents && dataStore.gcEvents.length === 0}
+    <div class="skeleton-list">
+      {#each [1,2,3,4] as _}
+        <div class="skeleton-event">
+          <div class="skeleton" style="width: 20%; height: 0.8rem;"></div>
+          <div class="skeleton" style="width: 70%; height: 1rem; margin-top: 0.5rem;"></div>
+        </div>
+      {/each}
+    </div>
+  {:else if dataStore.errors.gcEvents}
+    <div class="error-state">
+      <span class="error-icon">⚠️</span>
+      <p class="error-msg">{dataStore.errors.gcEvents}</p>
+      <button class="retry-btn" onclick={() => dataStore.refreshGCEvents()}>Retry</button>
+    </div>
+  {:else if dataStore.gcEvents.length === 0}
+    <div class="empty-state">
+      <span class="empty-icon">🎉</span>
+      <p>No GC events — kubelet hasn't needed to garbage collect recently.</p>
+    </div>
   {:else}
-    <div class="events-list">
-      {#each events as event}
-        <div class="event-card">
-          <div class="event-time">{formatTime(event.Timestamp)}</div>
-          <div class="event-body">
-            <span class="event-reason {reasonColor(event.Reason)}">{event.Reason}</span>
-            <span class="event-message">{event.Message}</span>
+    <div class="timeline">
+      {#each dataStore.gcEvents as event, i}
+        <div class="timeline-item" style="animation-delay: {i * 60}ms">
+          <div class="timeline-marker marker-{reasonType(event.Reason)}">
+            <span class="marker-icon">{reasonIcon(event.Reason)}</span>
+          </div>
+          <div class="timeline-content">
+            <div class="event-header">
+              <span class="event-reason reason-{reasonType(event.Reason)}">{event.Reason}</span>
+              <span class="event-time">{formatTime(event.Timestamp)}</span>
+            </div>
+            <p class="event-message">{event.Message}</p>
           </div>
         </div>
       {/each}
@@ -59,55 +64,121 @@
 </div>
 
 <style>
-  .header {
-    display: flex;
-    justify-content: space-between;
-    align-items: center;
+  .skeleton-list { display: grid; gap: var(--space-md); }
+
+  .skeleton-event {
+    background: var(--bg-surface);
+    border: 1px solid var(--border-muted);
+    border-radius: var(--radius-md);
+    padding: var(--space-md);
   }
 
-  .refresh {
-    background: #1d2125;
-    border: 1px solid #2f3336;
-    color: #e7e9ea;
-    padding: 0.4rem 0.8rem;
-    border-radius: 4px;
+  .error-state, .empty-state {
+    text-align: center;
+    padding: var(--space-2xl);
+    color: var(--text-muted);
+  }
+
+  .error-icon, .empty-icon { font-size: 2.5rem; display: block; margin-bottom: var(--space-md); }
+  .error-msg { color: var(--danger); }
+
+  .retry-btn {
+    background: var(--danger-muted);
+    border: 1px solid var(--danger);
+    color: var(--danger);
+    padding: var(--space-sm) var(--space-md);
+    border-radius: var(--radius-md);
     cursor: pointer;
   }
 
-  .refresh:hover { background: #2f3336; }
-  .status { color: #71767b; }
-  .status.error { color: #f4212e; }
-
-  .event-card {
-    background: #16181c;
-    border: 1px solid #2f3336;
-    border-radius: 8px;
-    padding: 0.75rem 1rem;
-    margin-bottom: 0.5rem;
+  /* Timeline */
+  .timeline {
+    position: relative;
+    padding-left: 2.5rem;
   }
 
-  .event-time {
-    font-size: 0.75rem;
-    color: #71767b;
-    margin-bottom: 0.25rem;
+  .timeline::before {
+    content: '';
+    position: absolute;
+    left: 1rem;
+    top: 0.5rem;
+    bottom: 0.5rem;
+    width: 2px;
+    background: var(--border-muted);
+    border-radius: 1px;
   }
 
-  .event-body { display: flex; gap: 0.75rem; align-items: baseline; }
+  .timeline-item {
+    position: relative;
+    padding-bottom: var(--space-md);
+    animation: fadeIn var(--transition-slow) both;
+  }
+
+  .timeline-marker {
+    position: absolute;
+    left: -1.75rem;
+    top: 0.2rem;
+    width: 1.5rem;
+    height: 1.5rem;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    border-radius: 50%;
+    background: var(--bg-surface);
+    border: 2px solid var(--border-default);
+    font-size: 0.7rem;
+    z-index: 1;
+  }
+
+  .marker-critical { border-color: var(--danger); }
+  .marker-success { border-color: var(--success); }
+
+  .timeline-content {
+    background: var(--bg-surface);
+    border: 1px solid var(--border-muted);
+    border-radius: var(--radius-md);
+    padding: var(--space-sm) var(--space-md);
+    transition: border-color var(--transition-fast);
+  }
+
+  .timeline-content:hover {
+    border-color: var(--border-default);
+  }
+
+  .event-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    gap: var(--space-sm);
+    flex-wrap: wrap;
+  }
 
   .event-reason {
-    font-size: 0.8rem;
+    font-size: 0.78rem;
     font-weight: 600;
-    padding: 0.1rem 0.4rem;
-    border-radius: 4px;
-    background: #1d2125;
-    white-space: nowrap;
+    padding: 2px 8px;
+    border-radius: var(--radius-full);
+    background: var(--bg-overlay);
+    color: var(--text-secondary);
   }
 
-  .event-reason.critical { background: #f4212e33; color: #f4212e; }
-  .event-reason.success { background: #00ba7c33; color: #00ba7c; }
+  .reason-critical { background: var(--danger-muted); color: var(--danger); }
+  .reason-success { background: var(--success-muted); color: var(--success); }
+
+  .event-time {
+    font-size: 0.72rem;
+    color: var(--text-muted);
+  }
 
   .event-message {
+    margin: var(--space-xs) 0 0;
     font-size: 0.85rem;
-    color: #e7e9ea;
+    color: var(--text-secondary);
+    line-height: 1.4;
+  }
+
+  @media (max-width: 640px) {
+    .timeline { padding-left: 2rem; }
+    .timeline-marker { left: -1.5rem; width: 1.25rem; height: 1.25rem; }
   }
 </style>
