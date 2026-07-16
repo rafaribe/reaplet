@@ -1,0 +1,87 @@
+[tools]
+go = "1.23"
+node = "22"
+
+[tasks.build]
+description = "Build the full project (frontend + backend)"
+depends = ["ui-build"]
+run = """
+CGO_ENABLED=0 go build -trimpath -ldflags='-s -w' -o reaplet ./cmd/reaplet
+"""
+
+[tasks.dev]
+description = "Run the backend in development mode"
+depends = ["ui-build"]
+run = "go run ./cmd/reaplet"
+
+[tasks.test]
+description = "Run Go tests"
+run = "go test -race -coverprofile=coverage.out ./..."
+
+[tasks.lint]
+description = "Run Go linting"
+run = """
+go vet ./...
+"""
+
+[tasks.tidy]
+description = "Tidy Go modules"
+run = "go mod tidy"
+
+[tasks.tidy-check]
+description = "Check go.mod tidiness"
+run = """
+go mod tidy
+git diff --exit-code go.mod go.sum
+"""
+
+[tasks.ui-install]
+description = "Install frontend dependencies"
+dir = "web"
+run = "npm ci"
+
+[tasks.ui-build]
+description = "Build frontend for embedding"
+depends = ["ui-install"]
+dir = "web"
+run = "npm run build"
+
+[tasks.ui-dev]
+description = "Run frontend dev server with hot reload"
+dir = "web"
+run = "npm run dev"
+
+[tasks.docker-build]
+description = "Build the Docker image locally"
+run = """
+docker build \
+  --build-arg VERSION=dev \
+  --build-arg REVISION=$(git rev-parse --short HEAD) \
+  -t reaplet:dev .
+"""
+
+[tasks.docker-build-local]
+description = "Build Docker image for current platform only (faster)"
+run = """
+docker build \
+  --build-arg VERSION=dev \
+  --build-arg REVISION=$(git rev-parse --short HEAD) \
+  --load \
+  -t reaplet:dev .
+"""
+
+[tasks.deploy]
+description = "Apply Kubernetes manifests"
+run = """
+kubectl apply -f deploy/rbac.yaml
+kubectl apply -f deploy/server.yaml
+kubectl apply -f deploy/daemonset.yaml
+"""
+
+[tasks.clean]
+description = "Remove build artifacts"
+run = """
+rm -f reaplet
+rm -rf cmd/reaplet/static/*
+echo '<!-- placeholder -->' > cmd/reaplet/static/index.html
+"""

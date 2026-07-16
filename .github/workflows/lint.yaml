@@ -30,10 +30,11 @@ jobs:
         with:
           persist-credentials: false
 
-      - name: Setup Go
-        uses: actions/setup-go@v5
+      - name: Setup Mise
+        uses: jdx/mise-action@v2
         with:
-          go-version-file: go.mod
+          experimental: true
+          install_args: --locked
 
       - name: Cache Go modules and build
         uses: actions/cache@v4
@@ -44,10 +45,8 @@ jobs:
           key: ${{ runner.os }}-go-${{ hashFiles('go.sum') }}
           restore-keys: ${{ runner.os }}-go-
 
-      - name: Run go vet
-        run: go vet ./...
+      - name: Run linter
+        run: mise run lint
 
       - name: Check go.mod tidiness
-        run: |
-          go mod tidy
-          git diff --exit-code go.mod go.sum
+        run: mise run tidy-check

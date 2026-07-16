@@ -30,10 +30,11 @@ jobs:
         with:
           persist-credentials: false
 
-      - name: Setup Go
-        uses: actions/setup-go@v5
+      - name: Setup Mise
+        uses: jdx/mise-action@v2
         with:
-          go-version-file: go.mod
+          experimental: true
+          install_args: --locked
 
       - name: Cache Go modules and build
         uses: actions/cache@v4
@@ -44,21 +45,11 @@ jobs:
           key: ${{ runner.os }}-go-${{ hashFiles('go.sum') }}
           restore-keys: ${{ runner.os }}-go-
 
-      - name: Setup Node
-        uses: actions/setup-node@v4
-        with:
-          node-version: "22"
-          cache: "npm"
-          cache-dependency-path: web/package-lock.json
-
       - name: Build frontend
-        working-directory: web
-        run: |
-          npm ci
-          npm run build
+        run: mise run ui-build
 
       - name: Run tests
-        run: go test -race -coverprofile=coverage.out ./...
+        run: mise run test
 
   ui:
     name: UI Build
@@ -71,17 +62,18 @@ jobs:
         with:
           persist-credentials: false
 
-      - name: Setup Node
-        uses: actions/setup-node@v4
+      - name: Setup Mise
+        uses: jdx/mise-action@v2
         with:
-          node-version: "22"
-          cache: "npm"
-          cache-dependency-path: web/package-lock.json
+          experimental: true
+          install_args: --locked
 
-      - name: Install dependencies
-        working-directory: web
-        run: npm ci
+      - name: Cache npm
+        uses: actions/cache@v4
+        with:
+          path: ~/.npm
+          key: ${{ runner.os }}-npm-${{ hashFiles('web/package-lock.json') }}
+          restore-keys: ${{ runner.os }}-npm-
 
-      - name: Build
-        working-directory: web
-        run: npm run build
+      - name: Build UI
+        run: mise run ui-build
