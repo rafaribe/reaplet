@@ -3,10 +3,10 @@
 name: Tests
 
 on:
-  push:
+  pull_request:
     branches: [main]
     paths-ignore: ["**.md"]
-  pull_request:
+  push:
     branches: [main]
     paths-ignore: ["**.md"]
   workflow_dispatch:
@@ -35,6 +35,9 @@ jobs:
         with:
           experimental: true
 
+      - name: Build frontend
+        run: mise run ui-build
+
       - name: Tidy modules
         run: go mod tidy
 
@@ -46,9 +49,6 @@ jobs:
             ~/go/pkg/mod
           key: ${{ runner.os }}-go-${{ hashFiles('go.sum') }}
           restore-keys: ${{ runner.os }}-go-
-
-      - name: Build frontend
-        run: mise run ui-build
 
       - name: Run tests
         run: mise run test

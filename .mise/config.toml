@@ -15,8 +15,8 @@ depends = ["ui-build"]
 run = "go run ./cmd/reaplet"
 
 [tasks.test]
-description = "Run Go tests"
-run = "go test -race -coverprofile=coverage.out ./..."
+description = "Run Go tests with coverage"
+run = "go test -race -coverprofile=coverage.out ./... && go tool cover -func=coverage.out | tail -1"
 
 [tasks.lint]
 description = "Run Go linting"
