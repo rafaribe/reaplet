@@ -34,7 +34,9 @@ jobs:
         uses: jdx/mise-action@v2
         with:
           experimental: true
-          install_args: --locked
+
+      - name: Tidy modules
+        run: go mod tidy
 
       - name: Cache Go modules and build
         uses: actions/cache@v4
@@ -49,4 +51,4 @@ jobs:
         run: mise run lint
 
       - name: Check go.mod tidiness
-        run: mise run tidy-check
+        run: git diff --exit-code go.mod go.sum

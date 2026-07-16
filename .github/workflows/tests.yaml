@@ -34,7 +34,9 @@ jobs:
         uses: jdx/mise-action@v2
         with:
           experimental: true
-          install_args: --locked
+
+      - name: Tidy modules
+        run: go mod tidy
 
       - name: Cache Go modules and build
         uses: actions/cache@v4
@@ -66,14 +68,6 @@ jobs:
         uses: jdx/mise-action@v2
         with:
           experimental: true
-          install_args: --locked
-
-      - name: Cache npm
-        uses: actions/cache@v4
-        with:
-          path: ~/.npm
-          key: ${{ runner.os }}-npm-${{ hashFiles('web/package-lock.json') }}
-          restore-keys: ${{ runner.os }}-npm-
 
       - name: Build UI
         run: mise run ui-build

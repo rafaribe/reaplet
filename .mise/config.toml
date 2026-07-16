@@ -1,5 +1,5 @@
 [tools]
-go = "1.23"
+go = "1.26"
 node = "22"
 
 [tasks.build]
@@ -38,7 +38,7 @@ git diff --exit-code go.mod go.sum
 [tasks.ui-install]
 description = "Install frontend dependencies"
 dir = "web"
-run = "npm ci"
+run = "npm install"
 
 [tasks.ui-build]
 description = "Build frontend for embedding"

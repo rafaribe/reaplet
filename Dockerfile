@@ -1,6 +1,6 @@
 # syntax=docker/dockerfile:1
 
-ARG GO_VERSION=1.23
+ARG GO_VERSION=1.26
 ARG NODE_VERSION=22
 
 # ---- UI build -------------------------------------------------------------
