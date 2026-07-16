@@ -1,5 +1,6 @@
 # Go
 /reaplet
+coverage.out
 /cmd/reaplet/static/*
 !/cmd/reaplet/static/.gitkeep
 
