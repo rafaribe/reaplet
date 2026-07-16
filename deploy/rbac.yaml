@@ -1,0 +1,41 @@
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: reaplet
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: reaplet
+  namespace: reaplet
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: reaplet
+rules:
+  # Read nodes, pods, events
+  - apiGroups: [""]
+    resources: ["nodes", "pods", "events"]
+    verbs: ["get", "list", "watch"]
+  # Evict pods
+  - apiGroups: ["policy"]
+    resources: ["evictions"]
+    verbs: ["create"]
+  # Read pod status for image info
+  - apiGroups: [""]
+    resources: ["pods/status"]
+    verbs: ["get"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: reaplet
+subjects:
+  - kind: ServiceAccount
+    name: reaplet
+    namespace: reaplet
+roleRef:
+  kind: ClusterRole
+  name: reaplet
+  apiGroup: rbac.authorization.k8s.io

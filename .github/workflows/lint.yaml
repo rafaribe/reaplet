@@ -1,0 +1,53 @@
+---
+# yaml-language-server: $schema=https://json.schemastore.org/github-workflow.json
+name: Lint
+
+on:
+  push:
+    branches: [main]
+    paths-ignore: ["**.md"]
+  pull_request:
+    branches: [main]
+    paths-ignore: ["**.md"]
+  workflow_dispatch:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  golangci-lint:
+    name: Go Lint
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: read
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+
+      - name: Setup Go
+        uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+
+      - name: Cache Go modules and build
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cache/go-build
+            ~/go/pkg/mod
+          key: ${{ runner.os }}-go-${{ hashFiles('go.sum') }}
+          restore-keys: ${{ runner.os }}-go-
+
+      - name: Run go vet
+        run: go vet ./...
+
+      - name: Check go.mod tidiness
+        run: |
+          go mod tidy
+          git diff --exit-code go.mod go.sum

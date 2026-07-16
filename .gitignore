@@ -1,0 +1,15 @@
+# Go
+/reaplet
+/cmd/reaplet/static/*
+!/cmd/reaplet/static/.gitkeep
+
+# Node
+web/node_modules/
+web/dist/
+
+# IDE
+.vscode/
+.idea/
+
+# OS
+.DS_Store
