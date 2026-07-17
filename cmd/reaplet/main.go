@@ -16,6 +16,7 @@ import (
 	"github.com/go-chi/chi/v5/middleware"
 
 	"github.com/rafaribe/reaplet/internal/infrastructure/k8s"
+	"github.com/rafaribe/reaplet/internal/infrastructure/storage"
 	"github.com/rafaribe/reaplet/internal/infrastructure/talos"
 	handler "github.com/rafaribe/reaplet/internal/interfaces/http"
 	"github.com/rafaribe/reaplet/internal/usecase"
@@ -34,6 +35,18 @@ func main() {
 	}
 
 	talosConfigPath := os.Getenv("TALOSCONFIG")
+	dbPath := os.Getenv("DB_PATH")
+	if dbPath == "" {
+		dbPath = "/data/reaplet.db"
+	}
+
+	// Infrastructure — SQLite
+	db, err := storage.New(dbPath)
+	if err != nil {
+		slog.Error("failed to open database", "path", dbPath, "error", err)
+		os.Exit(1)
+	}
+	defer db.Close()
 
 	// Infrastructure — Kubernetes client
 	k8sClient, err := k8s.NewClient()
@@ -43,7 +56,9 @@ func main() {
 	}
 
 	// Infrastructure — Talos API client
-	ctx := context.Background()
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
 	talosClient, err := talos.NewClient(ctx, talosConfigPath)
 	if err != nil {
 		slog.Error("failed to create talos client", "error", err)
@@ -61,6 +76,47 @@ func main() {
 	nodeUC := usecase.NewNodeUseCase(nodeRepo, gcRepo)
 	actionUC := usecase.NewActionUseCase(evictionRepo, imageRepo)
 
+	// Feature use cases
+	historyRec := usecase.NewHistoryRecorder(db, nodeUC)
+	alertEngine := usecase.NewAlertEngine(db, nodeUC)
+	cleanupEngine := usecase.NewCleanupEngine(db, nodeUC, actionUC)
+
+	// Background workers
+	go func() {
+		ticker := time.NewTicker(30 * time.Second)
+		defer ticker.Stop()
+		for {
+			select {
+			case <-ctx.Done():
+				return
+			case <-ticker.C:
+				historyRec.Record(ctx)
+				alertEngine.Check(ctx)
+			}
+		}
+	}()
+
+	// Cleanup scheduler (check config interval)
+	go func() {
+		for {
+			select {
+			case <-ctx.Done():
+				return
+			case <-time.After(1 * time.Hour):
+				cfg, err := db.GetCleanupConfig()
+				if err != nil || !cfg.Enabled {
+					continue
+				}
+				result, err := cleanupEngine.Run(ctx)
+				if err != nil {
+					slog.Error("scheduled cleanup failed", "error", err)
+				} else if len(result.Removed) > 0 {
+					slog.Info("scheduled cleanup completed", "removed", len(result.Removed), "dryRun", result.DryRun)
+				}
+			}
+		}
+	}()
+
 	// HTTP layer
 	r := chi.NewRouter()
 	r.Use(middleware.Logger)
@@ -68,14 +124,21 @@ func main() {
 	r.Use(middleware.Compress(5))
 	r.Use(middleware.Timeout(30 * time.Second))
 
-	// Enable CORS in dev mode
 	if os.Getenv("DEV") == "true" {
 		r.Use(handler.CORSMiddleware)
 		slog.Info("CORS enabled for development")
 	}
 
+	// Core handlers
 	h := handler.NewHandler(nodeUC, actionUC)
 	h.RegisterRoutes(r)
+
+	// Feature handlers
+	fh := handler.NewFeaturesHandler(db, historyRec, alertEngine, cleanupEngine, nodeRepo)
+	fh.RegisterRoutes(r)
+
+	// Prometheus metrics
+	r.Get("/metrics", handler.MetricsHandler(nodeUC))
 
 	// Serve embedded frontend
 	staticFS, err := fs.Sub(staticFiles, "static")
@@ -95,21 +158,22 @@ func main() {
 	}
 
 	go func() {
-		slog.Info("starting reaplet", "port", port, "talosconfig", talosConfigPath)
+		slog.Info("starting reaplet", "port", port, "db", dbPath)
 		if err := server.ListenAndServe(); err != nil && err != http.ErrServerClosed {
 			slog.Error("server failed", "error", err)
 			os.Exit(1)
 		}
 	}()
 
-	// Wait for interrupt signal
 	quit := make(chan os.Signal, 1)
 	signal.Notify(quit, syscall.SIGINT, syscall.SIGTERM)
 	sig := <-quit
 	slog.Info("shutting down", "signal", sig.String())
 
-	shutdownCtx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
-	defer cancel()
+	cancel() // stop background workers
+
+	shutdownCtx, shutdownCancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer shutdownCancel()
 
 	if err := server.Shutdown(shutdownCtx); err != nil {
 		slog.Error("forced shutdown", "error", err)
