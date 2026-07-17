@@ -184,13 +184,32 @@ function renderRecommendations() {
 async function handleRemove(i) {
   const rec = state.recommendations[i];
   const name = rec.Image.Names?.[0] || rec.Image.Names?.[1] || 'unnamed';
-  if (!confirm(`Remove ${name} from ${rec.NodeName}?\n\nThis will free ${formatBytes(rec.SavingsBytes)}.`)) return;
-  try {
-    const result = await removeImage(name, rec.NodeName);
-    if (result.Success) { toast(`Removed — freed ${formatBytes(result.FreedBytes)}`); loadAll(); }
-    else toast(`Failed: ${result.Error}`, 'error');
-  } catch (e) { toast(e.message, 'error'); }
+  showModal(
+    'Remove Image',
+    `<p>Remove <code>${name}</code> from <strong>${rec.NodeName}</strong>?</p><p class="modal-detail">This will free ${formatBytes(rec.SavingsBytes)}. The image can be re-pulled if needed.</p>`,
+    'Remove',
+    async () => {
+      try {
+        const result = await removeImage(name, rec.NodeName);
+        if (result.Success) { toast(`Removed — freed ${formatBytes(result.FreedBytes)}`); loadAll(); }
+        else toast(`Failed: ${result.Error}`, 'error');
+      } catch (e) { toast(e.message, 'error'); }
+    }
+  );
 }
+
+// --- Modal ---
+let modalCallback = null;
+function showModal(title, bodyHtml, confirmText, onConfirm) {
+  document.getElementById('modal-title').textContent = title;
+  document.getElementById('modal-body').innerHTML = bodyHtml;
+  document.getElementById('modal-confirm').textContent = confirmText;
+  modalCallback = onConfirm;
+  document.getElementById('modal').classList.add('open');
+  document.getElementById('modal-confirm').onclick = async () => { hideModal(); if (modalCallback) await modalCallback(); };
+}
+function modalCancel() { hideModal(); }
+function hideModal() { document.getElementById('modal').classList.remove('open'); modalCallback = null; }
 
 // --- Theme dropdown ---
 function renderThemeDropdown() {

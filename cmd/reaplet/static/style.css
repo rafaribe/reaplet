@@ -239,6 +239,40 @@ html, body {
 .toast-msg { flex: 1; font-size: 0.85rem; color: var(--text-primary); }
 .toast-close { background: none; border: none; color: var(--text-muted); font-size: 1.2rem; cursor: pointer; padding: 0 0.25rem; }
 
+/* --- MODAL --- */
+.modal-overlay {
+  position: fixed; inset: 0; z-index: 10000;
+  background: rgba(0,0,0,0.6); backdrop-filter: blur(4px);
+  display: none; align-items: center; justify-content: center;
+  animation: fadeIn var(--transition-fast) both;
+}
+.modal-overlay.open { display: flex; }
+.modal {
+  background: var(--bg-surface); border: 1px solid var(--border-default);
+  border-radius: var(--radius-lg); padding: var(--space-lg, 1.5rem);
+  box-shadow: var(--shadow-lg); max-width: 420px; width: 90%;
+  animation: slideUp var(--transition-normal) both;
+}
+.modal-header { display: flex; align-items: center; gap: 0.75rem; margin-bottom: 1rem; }
+.modal-icon { font-size: 1.5rem; }
+.modal-title { margin: 0; font-size: 1.1rem; font-weight: 600; }
+.modal-body { color: var(--text-secondary); font-size: 0.9rem; line-height: 1.5; margin-bottom: 1.5rem; }
+.modal-body code { font-family: var(--font-mono); font-size: 0.82rem; background: var(--bg-overlay); padding: 2px 6px; border-radius: var(--radius-sm); }
+.modal-body .modal-detail { margin-top: 0.75rem; font-size: 0.8rem; color: var(--text-muted); }
+.modal-actions { display: flex; justify-content: flex-end; gap: 0.75rem; }
+.btn-cancel {
+  background: var(--bg-overlay); border: 1px solid var(--border-default); color: var(--text-secondary);
+  padding: 0.5rem 1.2rem; border-radius: var(--radius-md); cursor: pointer; font-size: 0.85rem; font-weight: 500;
+  transition: all var(--transition-fast);
+}
+.btn-cancel:hover { background: var(--bg-elevated); color: var(--text-primary); }
+.btn-confirm {
+  background: var(--danger); border: 1px solid var(--danger); color: var(--text-inverse);
+  padding: 0.5rem 1.2rem; border-radius: var(--radius-md); cursor: pointer; font-size: 0.85rem; font-weight: 600;
+  transition: all var(--transition-fast);
+}
+.btn-confirm:hover { background: var(--danger-muted); color: var(--danger); border-color: var(--danger); }
+
 /* --- STATES --- */
 .empty-state, .error-state { text-align: center; padding: 3rem; color: var(--text-muted); }
 .empty-state .icon, .error-state .icon { font-size: 2.5rem; display: block; margin-bottom: 1rem; }

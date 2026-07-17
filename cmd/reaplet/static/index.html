@@ -47,6 +47,20 @@
     </footer>
   </div>
 
+  <div class="modal-overlay" id="modal" onclick="modalCancel()">
+    <div class="modal" onclick="event.stopPropagation()">
+      <div class="modal-header">
+        <span class="modal-icon">⚠️</span>
+        <h3 class="modal-title" id="modal-title">Confirm</h3>
+      </div>
+      <div class="modal-body" id="modal-body"></div>
+      <div class="modal-actions">
+        <button class="btn-cancel" onclick="modalCancel()">Cancel</button>
+        <button class="btn-confirm" id="modal-confirm">Remove</button>
+      </div>
+    </div>
+  </div>
+
   <div class="toast-container" id="toasts"></div>
 
   <script src="/app.js"></script>
