@@ -191,7 +191,11 @@ async function handleRemove(i) {
     async () => {
       try {
         const result = await removeImage(name, rec.NodeName);
-        if (result.Success) { toast(`Removed — freed ${formatBytes(result.FreedBytes)}`); loadAll(); }
+        if (result.Success) {
+          const freed = result.FreedBytes > 0 ? result.FreedBytes : rec.SavingsBytes;
+          toast(`Removed ${name} — freed ${formatBytes(freed)}`);
+          loadAll();
+        }
         else toast(`Failed: ${result.Error}`, 'error');
       } catch (e) { toast(e.message, 'error'); }
     }
