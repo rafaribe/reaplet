@@ -31,6 +31,7 @@ func (h *Handler) RegisterRoutes(r chi.Router) {
 		r.Get("/recommendations", h.GetRecommendations)
 		r.Post("/evict", h.EvictPod)
 		r.Post("/remove-image", h.RemoveImage)
+		r.Post("/remove-images-batch", h.RemoveImagesBatch)
 	})
 }
 
@@ -121,6 +122,72 @@ func (h *Handler) RemoveImage(w http.ResponseWriter, r *http.Request) {
 		GlobalCounters.IncrImageRemoval(req.NodeName, "failed")
 	}
 	writeJSON(w, http.StatusOK, result)
+}
+
+// BatchRemovalRequest is the input for batch image removal.
+type BatchRemovalRequest struct {
+	Images []model.ImageRemovalRequest `json:"images"`
+}
+
+// BatchRemovalResponse is the output of batch image removal.
+type BatchRemovalResponse struct {
+	Succeeded int                        `json:"succeeded"`
+	Failed    int                        `json:"failed"`
+	FreedBytes int64                     `json:"freedBytes"`
+	Results   []model.ImageRemovalResult `json:"results"`
+}
+
+// RemoveImagesBatch processes image removals sequentially to avoid memory spikes.
+// Images are removed one at a time with the previous result fully released before
+// starting the next, keeping memory stable even for large batches.
+func (h *Handler) RemoveImagesBatch(w http.ResponseWriter, r *http.Request) {
+	var req BatchRemovalRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		writeError(w, http.StatusBadRequest, "invalid request body")
+		return
+	}
+
+	if len(req.Images) == 0 {
+		writeError(w, http.StatusBadRequest, "no images specified")
+		return
+	}
+
+	// Cap batch size to prevent abuse
+	if len(req.Images) > 100 {
+		req.Images = req.Images[:100]
+	}
+
+	resp := BatchRemovalResponse{
+		Results: make([]model.ImageRemovalResult, 0, len(req.Images)),
+	}
+
+	// Process sequentially — one gRPC call at a time to keep memory stable
+	for _, img := range req.Images {
+		result, err := h.actionUC.RemoveImage(r.Context(), img)
+		if err != nil {
+			GlobalCounters.IncrImageRemoval(img.NodeName, "failed")
+			resp.Failed++
+			resp.Results = append(resp.Results, model.ImageRemovalResult{
+				ImageRef: img.ImageRef,
+				NodeName: img.NodeName,
+				Success:  false,
+				Error:    err.Error(),
+			})
+			continue
+		}
+
+		if result.Success {
+			GlobalCounters.IncrImageRemoval(img.NodeName, "success")
+			resp.Succeeded++
+			resp.FreedBytes += result.FreedBytes
+		} else {
+			GlobalCounters.IncrImageRemoval(img.NodeName, "failed")
+			resp.Failed++
+		}
+		resp.Results = append(resp.Results, *result)
+	}
+
+	writeJSON(w, http.StatusOK, resp)
 }
 
 func writeJSON(w http.ResponseWriter, status int, v any) {

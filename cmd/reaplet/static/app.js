@@ -351,19 +351,19 @@ async function handleRemoveAll() {
   const recs = state.recommendations;
   const total = recs.reduce((s, r) => s + r.SavingsBytes, 0);
   showModal('Remove All Unused Images',
-    `<p>Remove <strong>${recs.length}</strong> unused images across all nodes?</p><p class="modal-detail">This will free approximately ${formatBytes(total)}.</p>`,
+    `<p>Remove <strong>${recs.length}</strong> unused images across all nodes?</p><p class="modal-detail">This will free approximately ${formatBytes(total)}. Images are removed one at a time to keep memory stable.</p>`,
     `Remove All (${recs.length})`, async () => {
-      let ok = 0, fail = 0, freed = 0;
-      for (const rec of recs) {
-        const name = rec.Image.Names?.[0] || 'unnamed';
-        try {
-          const r = await api('/remove-image', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ NodeName: rec.NodeName, ImageRef: name }) });
-          if (r.Success) { ok++; freed += r.FreedBytes || rec.SavingsBytes; } else fail++;
-        } catch { fail++; }
-      }
-      if (ok) toast(`Removed ${ok} images — freed ${formatBytes(freed)}`);
-      if (fail) toast(`${fail} removals failed`, 'error');
-      loadAll();
+      try {
+        const images = recs.map(r => ({ NodeName: r.NodeName, ImageRef: r.Image.Names?.[0] || '' })).filter(i => i.ImageRef);
+        const result = await api('/remove-images-batch', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ images })
+        });
+        if (result.succeeded > 0) toast(`Removed ${result.succeeded} images — freed ${formatBytes(result.freedBytes)}`);
+        if (result.failed > 0) toast(`${result.failed} removals failed`, 'error');
+        loadAll();
+      } catch (e) { toast(e.message, 'error'); }
     });
 }
 
