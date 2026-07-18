@@ -70,6 +70,12 @@ func (uc *NodeUseCase) RecommendImages(ctx context.Context) ([]model.ImageRecomm
 			imageRef := ""
 			if len(img.Names) > 0 {
 				imageRef = img.Names[0]
+			} else if img.Digest != "" {
+				// Digest-only image (untagged) — use digest as reference
+				imageRef = img.Digest
+			} else {
+				// No name and no digest — skip, can't be referenced for removal
+				continue
 			}
 
 			reason := "unused by any running pod"

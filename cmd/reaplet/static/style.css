@@ -191,6 +191,7 @@ html, body {
 .pill { display: inline-block; padding: 2px 8px; border-radius: var(--radius-full); font-size: 0.72rem; font-weight: 600; }
 .pill-success { background: var(--success-muted); color: var(--success); }
 .pill-danger { background: var(--danger-muted); color: var(--danger); }
+.pill-muted { background: var(--bg-tertiary); color: var(--text-muted); margin-left: 0.5rem; }
 
 /* --- TIMELINE (GC Events) --- */
 .timeline { position: relative; padding-left: 2.5rem; }

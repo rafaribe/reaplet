@@ -20,9 +20,10 @@ type StorageInfo struct {
 
 // ContainerImage represents a container image on a node.
 type ContainerImage struct {
-	Names   []string
+	Names     []string
+	Digest    string // sha256 digest, extracted from names or Talos API
 	SizeBytes int64
-	InUse   bool // currently referenced by a running pod
+	InUse     bool // currently referenced by a running pod
 }
 
 // GCEvent represents a kubelet garbage collection event.

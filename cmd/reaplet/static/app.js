@@ -226,11 +226,16 @@ async function evictPod(podName, namespace, nodeName) {
 function renderImageTable(images) {
   if (!images || !images.length) return '<p style="color:var(--text-muted);font-size:0.85rem">No images</p>';
   const sorted = [...images].sort((a, b) => b.SizeBytes - a.SizeBytes);
-  const rows = sorted.map(img => `<tr>
-    <td><code>${img.Names?.[0] || 'unnamed'}</code></td>
+  const rows = sorted.map(img => {
+    const hasName = img.Names && img.Names.length > 0;
+    const displayName = hasName ? img.Names[0] : (img.Digest ? img.Digest.substring(0, 19) : 'unknown');
+    const digestBadge = !hasName && img.Digest ? ' <span class="pill pill-muted">digest-only</span>' : '';
+    return `<tr>
+    <td><code>${displayName}</code>${digestBadge}</td>
     <td>${formatBytes(img.SizeBytes)}</td>
     <td><span class="pill ${img.InUse ? 'pill-success' : 'pill-danger'}">${img.InUse ? 'In Use' : 'Unused'}</span></td>
-  </tr>`).join('');
+  </tr>`;
+  }).join('');
   return `<table class="image-table"><thead><tr><th>Image</th><th>Size</th><th>Status</th></tr></thead><tbody>${rows}</tbody></table>`;
 }
 
@@ -321,10 +326,12 @@ function renderRecommendations() {
     <button class="btn-remove-all" onclick="handleRemoveAll()">🗑️ Remove All Unused</button>
   </div>`;
   const cards = recs.map((r, i) => {
-    const name = r.Image.Names?.[0] || 'unnamed';
+    const hasName = r.Image.Names && r.Image.Names.length > 0;
+    const name = hasName ? r.Image.Names[0] : (r.Image.Digest ? r.Image.Digest.substring(0, 19) : 'unknown');
+    const digestLabel = !hasName && r.Image.Digest ? '<span class="pill pill-muted">digest-only</span>' : '';
     const stale = r.UnusedDays > 0 ? `<span class="rec-stale">⏱️ ${r.UnusedDays}d unused</span>` : '';
     return `<div class="rec-card" id="rec-${i}">
-      <div class="rec-info"><code class="rec-image">${name}</code>
+      <div class="rec-info"><code class="rec-image">${name}</code>${digestLabel}
         <div class="rec-meta"><span>🖥️ ${r.NodeName}</span><span>📦 ${formatBytes(r.SavingsBytes)}</span><span>💡 ${r.Reason}</span>${stale}</div>
       </div>
       <button class="btn-remove" onclick="handleRemove(${i})">Remove</button>
@@ -335,13 +342,16 @@ function renderRecommendations() {
 
 async function handleRemove(i) {
   const rec = state.recommendations[i];
-  const name = rec.Image.Names?.[0] || 'unnamed';
+  const hasName = rec.Image.Names && rec.Image.Names.length > 0;
+  const imageRef = hasName ? rec.Image.Names[0] : (rec.Image.Digest || '');
+  const displayName = hasName ? rec.Image.Names[0] : (rec.Image.Digest ? rec.Image.Digest.substring(0, 19) : 'unknown');
+  if (!imageRef) { toast('Cannot remove: no image reference available', 'error'); return; }
   showModal('Remove Image',
-    `<p>Remove <code>${name}</code> from <strong>${rec.NodeName}</strong>?</p><p class="modal-detail">This will free ${formatBytes(rec.SavingsBytes)}. The image can be re-pulled if needed.</p>`,
+    `<p>Remove <code>${displayName}</code> from <strong>${rec.NodeName}</strong>?</p><p class="modal-detail">This will free ${formatBytes(rec.SavingsBytes)}. The image can be re-pulled if needed.</p>`,
     'Remove', async () => {
       try {
-        const result = await api('/remove-image', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ NodeName: rec.NodeName, ImageRef: name }) });
-        if (result.Success) { toast(`Removed ${name} — freed ${formatBytes(result.FreedBytes || rec.SavingsBytes)}`); loadAll(); }
+        const result = await api('/remove-image', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ NodeName: rec.NodeName, ImageRef: imageRef }) });
+        if (result.Success) { toast(`Removed ${displayName} — freed ${formatBytes(result.FreedBytes || rec.SavingsBytes)}`); loadAll(); }
         else toast(`Failed: ${result.Error}`, 'error');
       } catch (e) { toast(e.message, 'error'); }
     });
@@ -354,7 +364,7 @@ async function handleRemoveAll() {
     `<p>Remove <strong>${recs.length}</strong> unused images across all nodes?</p><p class="modal-detail">This will free approximately ${formatBytes(total)}. Images are removed one at a time to keep memory stable.</p>`,
     `Remove All (${recs.length})`, async () => {
       try {
-        const images = recs.map(r => ({ NodeName: r.NodeName, ImageRef: r.Image.Names?.[0] || '' })).filter(i => i.ImageRef);
+        const images = recs.map(r => ({ NodeName: r.NodeName, ImageRef: (r.Image.Names && r.Image.Names.length > 0) ? r.Image.Names[0] : (r.Image.Digest || '') })).filter(i => i.ImageRef);
         const result = await api('/remove-images-batch', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
