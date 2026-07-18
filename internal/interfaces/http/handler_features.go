@@ -36,24 +36,22 @@ func NewFeaturesHandler(
 }
 
 func (fh *FeaturesHandler) RegisterRoutes(r chi.Router) {
-	r.Route("/api", func(r chi.Router) {
-		// Storage history
-		r.Get("/nodes/{name}/history", fh.GetNodeHistory)
+	// Storage history
+	r.Get("/api/nodes/{name}/history", fh.GetNodeHistory)
 
-		// Alert config
-		r.Get("/alerts/config", fh.GetAlertConfig)
-		r.Put("/alerts/config", fh.UpdateAlertConfig)
-		r.Get("/alerts/history", fh.GetAlertHistory)
-		r.Post("/alerts/test", fh.TestAlert)
+	// Alert config
+	r.Get("/api/alerts/config", fh.GetAlertConfig)
+	r.Put("/api/alerts/config", fh.UpdateAlertConfig)
+	r.Get("/api/alerts/history", fh.GetAlertHistory)
+	r.Post("/api/alerts/test", fh.TestAlert)
 
-		// Cleanup
-		r.Get("/cleanup/config", fh.GetCleanupConfig)
-		r.Put("/cleanup/config", fh.UpdateCleanupConfig)
-		r.Post("/cleanup/run", fh.RunCleanup)
+	// Cleanup
+	r.Get("/api/cleanup/config", fh.GetCleanupConfig)
+	r.Put("/api/cleanup/config", fh.UpdateCleanupConfig)
+	r.Post("/api/cleanup/run", fh.RunCleanup)
 
-		// Cluster summary
-		r.Get("/cluster/summary", fh.GetClusterSummary)
-	})
+	// Cluster summary
+	r.Get("/api/cluster/summary", fh.GetClusterSummary)
 }
 
 // --- History ---

@@ -74,6 +74,7 @@ func main() {
 
 	// Use cases
 	nodeUC := usecase.NewNodeUseCase(nodeRepo, gcRepo)
+	nodeUC.SetImageAgeRepo(db)
 	actionUC := usecase.NewActionUseCase(evictionRepo, imageRepo)
 
 	// Feature use cases

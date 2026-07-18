@@ -36,10 +36,11 @@ type GCEvent struct {
 
 // ImageRecommendation suggests an image for removal.
 type ImageRecommendation struct {
-	Image       ContainerImage
-	NodeName    string
-	Reason      string // e.g. "unused", "large", "duplicate tag"
+	Image        ContainerImage
+	NodeName     string
+	Reason       string // e.g. "unused", "large", "unused for 30 days"
 	SavingsBytes int64
+	UnusedDays   int // days since first seen unused (0 if unknown)
 }
 
 // EvictionRequest represents a request to evict a pod.
