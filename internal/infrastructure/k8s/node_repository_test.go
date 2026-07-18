@@ -133,3 +133,28 @@ var _ = Describe("mapNode", func() {
 		Expect(result.TotalImageSize).To(BeZero())
 	})
 })
+
+var _ = Describe("extractImageDigest", func() {
+	It("extracts digest from repo@sha256:xxx format", func() {
+		names := []string{"nginx:1.25", "nginx@sha256:abc123def456"}
+		Expect(extractImageDigest(names)).To(Equal("sha256:abc123def456"))
+	})
+
+	It("extracts digest from bare sha256:xxx format", func() {
+		names := []string{"sha256:deadbeef1234567890"}
+		Expect(extractImageDigest(names)).To(Equal("sha256:deadbeef1234567890"))
+	})
+
+	It("returns empty string when no digest present", func() {
+		names := []string{"nginx:1.25", "nginx:latest"}
+		Expect(extractImageDigest(names)).To(BeEmpty())
+	})
+
+	It("returns empty string for nil names", func() {
+		Expect(extractImageDigest(nil)).To(BeEmpty())
+	})
+
+	It("returns empty string for empty names", func() {
+		Expect(extractImageDigest([]string{})).To(BeEmpty())
+	})
+})

@@ -74,8 +74,13 @@ func mapNode(n corev1.Node, inUseImages map[string]bool) model.Node {
 			}
 		}
 		totalImageSize += img.SizeBytes
+
+		// Extract digest from image names (format: repo@sha256:xxx or sha256:xxx)
+		digest := extractImageDigest(img.Names)
+
 		images = append(images, model.ContainerImage{
 			Names:     img.Names,
+			Digest:    digest,
 			SizeBytes: img.SizeBytes,
 			InUse:     inUse,
 		})
@@ -94,6 +99,19 @@ func mapNode(n corev1.Node, inUseImages map[string]bool) model.Node {
 		Images:         images,
 		TotalImageSize: totalImageSize,
 	}
+}
+
+// extractImageDigest extracts sha256 digest from a list of image names.
+// Images may have entries like "nginx@sha256:abc123" or "sha256:abc123".
+func extractImageDigest(names []string) string {
+	for _, name := range names {
+		for i := 0; i < len(name)-7; i++ {
+			if name[i:i+7] == "sha256:" {
+				return name[i:]
+			}
+		}
+	}
+	return ""
 }
 
 func buildInUseImageMap(podList *corev1.PodList) map[string]bool {
