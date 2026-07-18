@@ -73,3 +73,65 @@ type ImageRemovalResult struct {
 	FreedBytes  int64
 	Error       string
 }
+
+// PodStorageInfo represents a pod's ephemeral storage usage on a node.
+type PodStorageInfo struct {
+	PodName            string `json:"podName"`
+	Namespace          string `json:"namespace"`
+	NodeName           string `json:"nodeName"`
+	EphemeralUsageBytes int64  `json:"ephemeralUsageBytes"`
+	ContainerCount     int    `json:"containerCount"`
+}
+
+// ImageDuplicateGroup identifies images with the same digest present across nodes.
+type ImageDuplicateGroup struct {
+	Digest      string   `json:"digest"`
+	Names       []string `json:"names"`
+	Nodes       []string `json:"nodes"`
+	SizeBytes   int64    `json:"sizeBytes"`
+	WastedBytes int64    `json:"wastedBytes"`
+}
+
+// StorageForecast projects when a node will hit storage thresholds.
+type StorageForecast struct {
+	NodeName                 string  `json:"nodeName"`
+	CurrentPct               float64 `json:"currentPct"`
+	ProjectedDaysToWarning   float64 `json:"projectedDaysToWarning"`
+	ProjectedDaysToCritical  float64 `json:"projectedDaysToCritical"`
+	TrendBytesPerDay         int64   `json:"trendBytesPerDay"`
+}
+
+// WarmListEntry represents an image in the warm list (pre-pull management).
+type WarmListEntry struct {
+	ID       int64     `json:"id"`
+	ImageRef string    `json:"imageRef"`
+	AddedAt  time.Time `json:"addedAt"`
+}
+
+// WarmListStatus shows warm list images and which nodes are missing them.
+type WarmListStatus struct {
+	Entries      []WarmListEntry       `json:"entries"`
+	MissingOnNodes map[string][]string `json:"missingOnNodes"` // imageRef → []nodeName
+}
+
+// PreWarmCheckRequest is the input for pre-warm checking.
+type PreWarmCheckRequest struct {
+	ImageRef string `json:"imageRef"`
+	NodeName string `json:"nodeName"`
+}
+
+// PreWarmCheckResult is the result of checking if an image exists on a node.
+type PreWarmCheckResult struct {
+	Exists    bool  `json:"exists"`
+	SizeBytes int64 `json:"sizeBytes"`
+	CanPull   bool  `json:"canPull"`
+}
+
+// UpgradeCheckResult estimates if a node has enough space for a Talos upgrade.
+type UpgradeCheckResult struct {
+	NodeName            string `json:"nodeName"`
+	AvailableBytes      int64  `json:"availableBytes"`
+	EstimatedNeededBytes int64  `json:"estimatedNeededBytes"`
+	Safe                bool   `json:"safe"`
+	Message             string `json:"message"`
+}

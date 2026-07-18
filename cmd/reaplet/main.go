@@ -81,6 +81,8 @@ func main() {
 	historyRec := usecase.NewHistoryRecorder(db, nodeUC)
 	alertEngine := usecase.NewAlertEngine(db, nodeUC)
 	cleanupEngine := usecase.NewCleanupEngine(db, nodeUC, actionUC)
+	warmListUC := usecase.NewWarmListUseCase(db, nodeRepo)
+	podStorageRepo := k8s.NewPodStorageRepository(k8sClient)
 
 	// Background workers
 	go func() {
@@ -135,7 +137,7 @@ func main() {
 	h.RegisterRoutes(r)
 
 	// Feature handlers
-	fh := handler.NewFeaturesHandler(db, historyRec, alertEngine, cleanupEngine, nodeRepo)
+	fh := handler.NewFeaturesHandler(db, historyRec, alertEngine, cleanupEngine, nodeRepo, podStorageRepo, warmListUC)
 	fh.RegisterRoutes(r)
 
 	// Prometheus metrics
