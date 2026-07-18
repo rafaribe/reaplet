@@ -48,6 +48,10 @@ async function removeImage(imageRef, nodeName) {
     method: 'POST', headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ NodeName: nodeName, ImageRef: imageRef })
   });
+  if (!r.ok) {
+    const err = await r.json().catch(() => ({ error: `HTTP ${r.status}` }));
+    return { Success: false, Error: err.error || `HTTP ${r.status}` };
+  }
   return r.json();
 }
 
@@ -168,12 +172,15 @@ function renderRecommendations() {
     <div class="summary-stat"><span class="stat-number">${recs.length}</span><span class="stat-label">unused images</span></div>
     <div class="summary-divider"></div>
     <div class="summary-stat"><span class="stat-number">${formatBytes(total)}</span><span class="stat-label">reclaimable</span></div>
+    <div class="summary-divider"></div>
+    <button class="btn-remove-all" onclick="handleRemoveAll()">🗑️ Remove All Unused</button>
   </div>`;
   const cards = recs.map((r, i) => {
     const name = r.Image.Names?.[0] || 'unnamed';
-    return `<div class="rec-card">
+    const stale = r.UnusedDays > 0 ? `<span class="rec-stale">⏱️ ${r.UnusedDays}d unused</span>` : '';
+    return `<div class="rec-card" id="rec-${i}">
       <div class="rec-info"><code class="rec-image">${name}</code>
-        <div class="rec-meta"><span>🖥️ ${r.NodeName}</span><span>📦 ${formatBytes(r.SavingsBytes)}</span><span>💡 ${r.Reason}</span></div>
+        <div class="rec-meta"><span>🖥️ ${r.NodeName}</span><span>📦 ${formatBytes(r.SavingsBytes)}</span><span>💡 ${r.Reason}</span>${stale}</div>
       </div>
       <button class="btn-remove" onclick="handleRemove(${i})">Remove</button>
     </div>`;
@@ -202,6 +209,34 @@ async function handleRemove(i) {
   );
 }
 
+async function handleRemoveAll() {
+  const recs = state.recommendations;
+  const total = recs.reduce((s, r) => s + r.SavingsBytes, 0);
+  showModal(
+    'Remove All Unused Images',
+    `<p>Remove <strong>${recs.length}</strong> unused images across all nodes?</p><p class="modal-detail">This will free approximately ${formatBytes(total)}. All images can be re-pulled if needed.</p>`,
+    `Remove All (${recs.length})`,
+    async () => {
+      let succeeded = 0, failed = 0, freedTotal = 0;
+      for (const rec of recs) {
+        const name = rec.Image.Names?.[0] || 'unnamed';
+        try {
+          const result = await removeImage(name, rec.NodeName);
+          if (result.Success) {
+            succeeded++;
+            freedTotal += result.FreedBytes > 0 ? result.FreedBytes : rec.SavingsBytes;
+          } else {
+            failed++;
+          }
+        } catch (e) { failed++; }
+      }
+      if (succeeded > 0) toast(`Removed ${succeeded} images — freed ${formatBytes(freedTotal)}`);
+      if (failed > 0) toast(`${failed} removals failed`, 'error');
+      loadAll();
+    }
+  );
+}
+
 // --- Modal ---
 let modalCallback = null;
 function showModal(title, bodyHtml, confirmText, onConfirm) {
@@ -210,7 +245,11 @@ function showModal(title, bodyHtml, confirmText, onConfirm) {
   document.getElementById('modal-confirm').textContent = confirmText;
   modalCallback = onConfirm;
   document.getElementById('modal').classList.add('open');
-  document.getElementById('modal-confirm').onclick = async () => { hideModal(); if (modalCallback) await modalCallback(); };
+  document.getElementById('modal-confirm').onclick = async () => {
+    const cb = modalCallback;
+    hideModal();
+    if (cb) await cb();
+  };
 }
 function modalCancel() { hideModal(); }
 function hideModal() { document.getElementById('modal').classList.remove('open'); modalCallback = null; }
