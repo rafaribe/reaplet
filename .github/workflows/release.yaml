@@ -146,6 +146,8 @@ jobs:
           context: .
           platforms: ${{ matrix.platform }}
           push: true
+          provenance: false
+          sbom: false
           tags: ghcr.io/${{ github.repository }}:${{ needs.version.outputs.version_tag }}-${{ matrix.arch }}
           build-args: |
             VERSION=${{ needs.version.outputs.version_tag }}
