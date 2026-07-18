@@ -12,9 +12,10 @@ import (
 
 // NodeUseCase handles node storage monitoring logic.
 type NodeUseCase struct {
-	nodeRepo    repository.NodeRepository
-	gcRepo      repository.GCEventRepository
-	imageAgeRepo repository.ImageAgeRepository // optional, nil disables staleness
+	nodeRepo     repository.NodeRepository
+	gcRepo       repository.GCEventRepository
+	imageAgeRepo repository.ImageAgeRepository  // optional, nil disables staleness
+	imageRepo    repository.ImageRepository     // optional, nil disables Talos enrichment
 }
 
 func NewNodeUseCase(nodeRepo repository.NodeRepository, gcRepo repository.GCEventRepository) *NodeUseCase {
@@ -27,6 +28,12 @@ func NewNodeUseCase(nodeRepo repository.NodeRepository, gcRepo repository.GCEven
 // SetImageAgeRepo sets an optional image age repository for staleness-aware recommendations.
 func (uc *NodeUseCase) SetImageAgeRepo(repo repository.ImageAgeRepository) {
 	uc.imageAgeRepo = repo
+}
+
+// SetImageRepo sets an optional image repository for Talos-based image enrichment.
+// When set, images without names are enriched with references from the Talos API.
+func (uc *NodeUseCase) SetImageRepo(repo repository.ImageRepository) {
+	uc.imageRepo = repo
 }
 
 func (uc *NodeUseCase) GetNodes(ctx context.Context) ([]model.Node, error) {
@@ -47,6 +54,8 @@ func (uc *NodeUseCase) GetRecentGCEvents(ctx context.Context, limit int) ([]mode
 // RecommendImages identifies images that are candidates for removal.
 // When an ImageAgeRepository is configured, recommendations include staleness
 // information and are sorted by staleness (oldest unused first).
+// When an ImageRepository is configured, images without names are enriched
+// with references from the Talos API to enable their removal.
 func (uc *NodeUseCase) RecommendImages(ctx context.Context) ([]model.ImageRecommendation, error) {
 	nodes, err := uc.nodeRepo.GetAll(ctx)
 	if err != nil {
@@ -62,6 +71,21 @@ func (uc *NodeUseCase) RecommendImages(ctx context.Context) ([]model.ImageRecomm
 			ages, _ = uc.imageAgeRepo.GetAllImageAges(node.Name)
 		}
 
+		// Check if this node has nameless images that need Talos enrichment
+		var talosRefsBySize map[int64][]string
+		if uc.imageRepo != nil {
+			hasNameless := false
+			for _, img := range node.Images {
+				if !img.InUse && len(img.Names) == 0 && img.Digest == "" {
+					hasNameless = true
+					break
+				}
+			}
+			if hasNameless {
+				talosRefsBySize = uc.buildTalosRefMap(ctx, node.Name)
+			}
+		}
+
 		for _, img := range node.Images {
 			if img.InUse {
 				continue
@@ -73,8 +97,18 @@ func (uc *NodeUseCase) RecommendImages(ctx context.Context) ([]model.ImageRecomm
 			} else if img.Digest != "" {
 				// Digest-only image (untagged) — use digest as reference
 				imageRef = img.Digest
-			} else {
-				// No name and no digest — skip, can't be referenced for removal
+			} else if talosRefsBySize != nil {
+				// Try to find a Talos reference by matching size
+				if refs, ok := talosRefsBySize[img.SizeBytes]; ok && len(refs) > 0 {
+					imageRef = refs[0]
+					img.Digest = imageRef
+					// Consume this ref so it's not reused for another image
+					talosRefsBySize[img.SizeBytes] = refs[1:]
+				}
+			}
+
+			if imageRef == "" {
+				// Still no reference — skip
 				continue
 			}
 
@@ -122,6 +156,32 @@ func (uc *NodeUseCase) RecommendImages(ctx context.Context) ([]model.ImageRecomm
 	})
 
 	return recommendations, nil
+}
+
+// buildTalosRefMap calls Talos ListImages for a node and returns a map of
+// size → []imageRef for images that are NOT already known by the K8s API.
+// This enables matching nameless K8s images to their Talos CRI reference.
+func (uc *NodeUseCase) buildTalosRefMap(ctx context.Context, nodeName string) map[int64][]string {
+	talosImages, err := uc.imageRepo.ListImages(ctx, nodeName)
+	if err != nil {
+		return nil
+	}
+
+	// Build a map: size → list of Talos image references
+	// Only include images whose reference looks like a digest (sha256:...)
+	// since named images are already handled by the K8s API path
+	refsBySize := make(map[int64][]string)
+	for _, ti := range talosImages {
+		if len(ti.Names) > 0 {
+			ref := ti.Names[0]
+			// Only include digest-style refs (sha256:...) — named images are
+			// already available from the K8s API
+			if len(ref) > 7 && ref[:7] == "sha256:" {
+				refsBySize[ti.SizeBytes] = append(refsBySize[ti.SizeBytes], ref)
+			}
+		}
+	}
+	return refsBySize
 }
 
 // ActionUseCase handles destructive operations (eviction, image removal).

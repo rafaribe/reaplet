@@ -220,6 +220,51 @@ var _ = Describe("NodeUseCase", func() {
 			_, err := uc.RecommendImages(ctx)
 			Expect(err).To(HaveOccurred())
 		})
+
+		It("enriches nameless images using Talos ListImages when imageRepo is set", func() {
+			nodes := []model.Node{
+				{
+					Name: "node-1",
+					Images: []model.ContainerImage{
+						{Names: []string{"nginx:latest"}, SizeBytes: 200 * 1024 * 1024, InUse: true},
+						{Names: nil, SizeBytes: 3*1024*1024*1024 + 500*1024*1024, InUse: false}, // nameless, 3.5 GB
+					},
+				},
+			}
+			// Talos returns the image by digest
+			talosImages := []model.ContainerImage{
+				{Names: []string{"sha256:deadbeef123456"}, SizeBytes: 3*1024*1024*1024 + 500*1024*1024},
+			}
+			uc := usecase.NewNodeUseCase(&fakeNodeRepo{nodes: nodes}, &fakeGCRepo{})
+			uc.SetImageRepo(&fakeImageRepo{images: talosImages})
+
+			recs, err := uc.RecommendImages(ctx)
+			Expect(err).NotTo(HaveOccurred())
+			Expect(recs).To(HaveLen(1))
+			Expect(recs[0].Image.Digest).To(Equal("sha256:deadbeef123456"))
+			Expect(recs[0].Reason).To(ContainSubstring("large"))
+		})
+
+		It("skips nameless images when no Talos match is found", func() {
+			nodes := []model.Node{
+				{
+					Name: "node-1",
+					Images: []model.ContainerImage{
+						{Names: nil, SizeBytes: 1024 * 1024 * 1024, InUse: false}, // 1 GB, no match
+					},
+				},
+			}
+			// Talos returns different sizes — no match
+			talosImages := []model.ContainerImage{
+				{Names: []string{"sha256:abc123"}, SizeBytes: 2 * 1024 * 1024 * 1024},
+			}
+			uc := usecase.NewNodeUseCase(&fakeNodeRepo{nodes: nodes}, &fakeGCRepo{})
+			uc.SetImageRepo(&fakeImageRepo{images: talosImages})
+
+			recs, err := uc.RecommendImages(ctx)
+			Expect(err).NotTo(HaveOccurred())
+			Expect(recs).To(BeEmpty())
+		})
 	})
 })
 
