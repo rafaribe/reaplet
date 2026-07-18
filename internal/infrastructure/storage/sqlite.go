@@ -77,6 +77,12 @@ func migrate(db *sql.DB) error {
 		config_json TEXT NOT NULL DEFAULT '{}'
 	);
 	INSERT OR IGNORE INTO cleanup_config (id, config_json) VALUES (1, '{"enabled":false,"intervalHours":6,"maxAgeDays":7,"maxSizeMB":500,"keepPatterns":[".*pause.*",".*coredns.*"],"maxPerCycle":5,"dryRun":true}');
+
+	CREATE TABLE IF NOT EXISTS warm_list (
+		id INTEGER PRIMARY KEY AUTOINCREMENT,
+		image_ref TEXT NOT NULL UNIQUE,
+		added_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP
+	);
 	`
 	_, err := db.Exec(schema)
 	return err
@@ -296,4 +302,63 @@ func (d *DB) SaveCleanupConfig(cfg *CleanupConfig) error {
 	}
 	_, err = d.db.Exec("UPDATE cleanup_config SET config_json = ? WHERE id = 1", string(data))
 	return err
+}
+
+// --- Warm List ---
+
+// WarmListEntry is a database row from warm_list.
+type WarmListEntry struct {
+	ID       int64     `json:"id"`
+	ImageRef string    `json:"imageRef"`
+	AddedAt  time.Time `json:"addedAt"`
+}
+
+// GetWarmList returns all entries in the warm list.
+func (d *DB) GetWarmList() ([]WarmListEntry, error) {
+	rows, err := d.db.Query("SELECT id, image_ref, added_at FROM warm_list ORDER BY added_at DESC")
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var entries []WarmListEntry
+	for rows.Next() {
+		var e WarmListEntry
+		if err := rows.Scan(&e.ID, &e.ImageRef, &e.AddedAt); err != nil {
+			return nil, err
+		}
+		entries = append(entries, e)
+	}
+	return entries, rows.Err()
+}
+
+// AddWarmListEntry inserts a new image into the warm list.
+func (d *DB) AddWarmListEntry(imageRef string) (*WarmListEntry, error) {
+	result, err := d.db.Exec("INSERT INTO warm_list (image_ref) VALUES (?)", imageRef)
+	if err != nil {
+		return nil, err
+	}
+	id, _ := result.LastInsertId()
+	return &WarmListEntry{ID: id, ImageRef: imageRef, AddedAt: time.Now()}, nil
+}
+
+// DeleteWarmListEntry removes a warm list entry by ID.
+func (d *DB) DeleteWarmListEntry(id int64) error {
+	res, err := d.db.Exec("DELETE FROM warm_list WHERE id = ?", id)
+	if err != nil {
+		return err
+	}
+	n, _ := res.RowsAffected()
+	if n == 0 {
+		return fmt.Errorf("warm list entry %d not found", id)
+	}
+	return nil
+}
+
+// --- Forecast History ---
+
+// GetHistoryForForecast returns history points for the last N days for linear regression.
+func (d *DB) GetHistoryForForecast(nodeName string, days int) ([]HistoryPoint, error) {
+	since := time.Now().Add(-time.Duration(days) * 24 * time.Hour)
+	return d.GetHistory(nodeName, since)
 }
