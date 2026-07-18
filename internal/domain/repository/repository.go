@@ -42,3 +42,19 @@ type ImageAgeRepository interface {
 	// GetAllImageAges returns first-seen timestamps for all images on a node.
 	GetAllImageAges(nodeName string) (map[string]time.Time, error)
 }
+
+// PodStorageRepository provides pod-level ephemeral storage information.
+type PodStorageRepository interface {
+	// GetPodsOnNode returns pods on a node with their ephemeral storage usage.
+	GetPodsOnNode(ctx context.Context, nodeName string) ([]model.PodStorageInfo, error)
+}
+
+// WarmListRepository provides CRUD for the image warm list.
+type WarmListRepository interface {
+	// GetAll returns all warm list entries.
+	GetAll() ([]model.WarmListEntry, error)
+	// Add adds an image reference to the warm list.
+	Add(imageRef string) (*model.WarmListEntry, error)
+	// Delete removes a warm list entry by ID.
+	Delete(id int64) error
+}
