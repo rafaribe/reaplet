@@ -2,9 +2,11 @@
 
 ARG GO_VERSION=1.26
 
-FROM golang:${GO_VERSION}-alpine AS builder
+# Build natively on the runner's architecture, cross-compile via GOARCH.
+# This avoids QEMU emulation which makes modernc.org/sqlite unbearably slow.
+FROM --platform=$BUILDPLATFORM golang:${GO_VERSION}-alpine AS builder
 
-ARG TARGETOS
+ARG TARGETOS=linux
 ARG TARGETARCH
 ARG VERSION=dev
 ARG REVISION=dev
@@ -22,7 +24,7 @@ COPY internal/ internal/
 
 # Static, stripped, reproducible binary.
 # The frontend (cmd/reaplet/static/) is embedded at compile time — no build step needed.
-RUN CGO_ENABLED=0 GOOS=${TARGETOS:-linux} GOARCH=${TARGETARCH} \
+RUN CGO_ENABLED=0 GOOS=${TARGETOS} GOARCH=${TARGETARCH} \
     go build -trimpath \
     -ldflags "-s -w -X main.version=${VERSION} -X main.commit=${REVISION}" \
     -o reaplet ./cmd/reaplet
