@@ -17,6 +17,14 @@ func MetricsHandler(nodeUC *usecase.NodeUseCase) http.HandlerFunc {
 			return
 		}
 
+		// Update GC event counters from live data
+		gcEvents, _ := nodeUC.GetRecentGCEvents(r.Context(), 1000)
+		gcCounts := make(map[string]int64)
+		for _, ev := range gcEvents {
+			gcCounts[ev.Reason]++
+		}
+		GlobalCounters.SetGCEvents(gcCounts)
+
 		var b strings.Builder
 
 		b.WriteString("# HELP reaplet_node_storage_capacity_bytes Total ephemeral storage capacity in bytes\n")
@@ -81,6 +89,31 @@ func MetricsHandler(nodeUC *usecase.NodeUseCase) http.HandlerFunc {
 				}
 			}
 			fmt.Fprintf(&b, "reaplet_node_image_unused_size_bytes{node=%q} %d\n", n.Name, unusedSize)
+		}
+
+		// Operation counters
+		removals, evictions, gcEventCounts := GlobalCounters.Snapshot()
+
+		b.WriteString("# HELP reaplet_image_removals_total Total number of image removal operations\n")
+		b.WriteString("# TYPE reaplet_image_removals_total counter\n")
+		for node, statuses := range removals {
+			for status, count := range statuses {
+				fmt.Fprintf(&b, "reaplet_image_removals_total{node=%q,status=%q} %d\n", node, status, count)
+			}
+		}
+
+		b.WriteString("# HELP reaplet_pod_evictions_total Total number of pod eviction operations\n")
+		b.WriteString("# TYPE reaplet_pod_evictions_total counter\n")
+		for node, statuses := range evictions {
+			for status, count := range statuses {
+				fmt.Fprintf(&b, "reaplet_pod_evictions_total{node=%q,status=%q} %d\n", node, status, count)
+			}
+		}
+
+		b.WriteString("# HELP reaplet_gc_events_total Total number of kubelet GC events observed\n")
+		b.WriteString("# TYPE reaplet_gc_events_total counter\n")
+		for reason, count := range gcEventCounts {
+			fmt.Fprintf(&b, "reaplet_gc_events_total{reason=%q} %d\n", reason, count)
 		}
 
 		w.Header().Set("Content-Type", "text/plain; version=0.0.4; charset=utf-8")

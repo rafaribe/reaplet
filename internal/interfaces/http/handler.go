@@ -91,8 +91,14 @@ func (h *Handler) EvictPod(w http.ResponseWriter, r *http.Request) {
 	}
 	result, err := h.actionUC.EvictPod(r.Context(), req)
 	if err != nil {
+		GlobalCounters.IncrPodEviction(req.NodeName, "failed")
 		writeError(w, http.StatusInternalServerError, err.Error())
 		return
+	}
+	if result.Success {
+		GlobalCounters.IncrPodEviction(req.NodeName, "success")
+	} else {
+		GlobalCounters.IncrPodEviction(req.NodeName, "failed")
 	}
 	writeJSON(w, http.StatusOK, result)
 }
@@ -105,8 +111,14 @@ func (h *Handler) RemoveImage(w http.ResponseWriter, r *http.Request) {
 	}
 	result, err := h.actionUC.RemoveImage(r.Context(), req)
 	if err != nil {
+		GlobalCounters.IncrImageRemoval(req.NodeName, "failed")
 		writeError(w, http.StatusInternalServerError, err.Error())
 		return
+	}
+	if result.Success {
+		GlobalCounters.IncrImageRemoval(req.NodeName, "success")
+	} else {
+		GlobalCounters.IncrImageRemoval(req.NodeName, "failed")
 	}
 	writeJSON(w, http.StatusOK, result)
 }

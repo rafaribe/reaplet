@@ -2,7 +2,9 @@ package usecase
 
 import (
 	"context"
+	"fmt"
 	"sort"
+	"time"
 
 	"github.com/rafaribe/reaplet/internal/domain/model"
 	"github.com/rafaribe/reaplet/internal/domain/repository"
@@ -10,8 +12,9 @@ import (
 
 // NodeUseCase handles node storage monitoring logic.
 type NodeUseCase struct {
-	nodeRepo repository.NodeRepository
-	gcRepo   repository.GCEventRepository
+	nodeRepo    repository.NodeRepository
+	gcRepo      repository.GCEventRepository
+	imageAgeRepo repository.ImageAgeRepository // optional, nil disables staleness
 }
 
 func NewNodeUseCase(nodeRepo repository.NodeRepository, gcRepo repository.GCEventRepository) *NodeUseCase {
@@ -19,6 +22,11 @@ func NewNodeUseCase(nodeRepo repository.NodeRepository, gcRepo repository.GCEven
 		nodeRepo: nodeRepo,
 		gcRepo:   gcRepo,
 	}
+}
+
+// SetImageAgeRepo sets an optional image age repository for staleness-aware recommendations.
+func (uc *NodeUseCase) SetImageAgeRepo(repo repository.ImageAgeRepository) {
+	uc.imageAgeRepo = repo
 }
 
 func (uc *NodeUseCase) GetNodes(ctx context.Context) ([]model.Node, error) {
@@ -37,6 +45,8 @@ func (uc *NodeUseCase) GetRecentGCEvents(ctx context.Context, limit int) ([]mode
 }
 
 // RecommendImages identifies images that are candidates for removal.
+// When an ImageAgeRepository is configured, recommendations include staleness
+// information and are sorted by staleness (oldest unused first).
 func (uc *NodeUseCase) RecommendImages(ctx context.Context) ([]model.ImageRecommendation, error) {
 	nodes, err := uc.nodeRepo.GetAll(ctx)
 	if err != nil {
@@ -46,25 +56,62 @@ func (uc *NodeUseCase) RecommendImages(ctx context.Context) ([]model.ImageRecomm
 	var recommendations []model.ImageRecommendation
 
 	for _, node := range nodes {
+		// Load image ages if available
+		var ages map[string]time.Time
+		if uc.imageAgeRepo != nil {
+			ages, _ = uc.imageAgeRepo.GetAllImageAges(node.Name)
+		}
+
 		for _, img := range node.Images {
 			if img.InUse {
 				continue
 			}
-			reason := "unused by any running pod"
-			if img.SizeBytes > 500*1024*1024 { // > 500MB
-				reason = "unused and large (>500MB)"
+
+			imageRef := ""
+			if len(img.Names) > 0 {
+				imageRef = img.Names[0]
 			}
+
+			reason := "unused by any running pod"
+			var unusedDays int
+
+			// Check staleness
+			if ages != nil && imageRef != "" {
+				if firstSeen, ok := ages[imageRef]; ok {
+					unusedDays = int(time.Since(firstSeen).Hours() / 24)
+					if unusedDays >= 30 {
+						reason = fmt.Sprintf("unused for %d days (>30d)", unusedDays)
+					} else if unusedDays >= 7 {
+						reason = fmt.Sprintf("unused for %d days (>7d)", unusedDays)
+					} else if unusedDays > 0 {
+						reason = fmt.Sprintf("unused for %d days", unusedDays)
+					}
+				}
+			}
+
+			if img.SizeBytes > 500*1024*1024 {
+				if unusedDays > 0 {
+					reason += ", large (>500MB)"
+				} else {
+					reason = "unused and large (>500MB)"
+				}
+			}
+
 			recommendations = append(recommendations, model.ImageRecommendation{
 				Image:        img,
 				NodeName:     node.Name,
 				Reason:       reason,
 				SavingsBytes: img.SizeBytes,
+				UnusedDays:   unusedDays,
 			})
 		}
 	}
 
-	// Sort by size descending — biggest savings first
+	// Sort by staleness first (oldest unused), then by size
 	sort.Slice(recommendations, func(i, j int) bool {
+		if recommendations[i].UnusedDays != recommendations[j].UnusedDays {
+			return recommendations[i].UnusedDays > recommendations[j].UnusedDays
+		}
 		return recommendations[i].SavingsBytes > recommendations[j].SavingsBytes
 	})
 

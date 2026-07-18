@@ -2,6 +2,7 @@ package repository
 
 import (
 	"context"
+	"time"
 
 	"github.com/rafaribe/reaplet/internal/domain/model"
 )
@@ -34,4 +35,10 @@ type ImageRepository interface {
 	RemoveImage(ctx context.Context, req model.ImageRemovalRequest) (*model.ImageRemovalResult, error)
 	// ListImages lists all images on a specific node via CRI.
 	ListImages(ctx context.Context, nodeName string) ([]model.ContainerImage, error)
+}
+
+// ImageAgeRepository provides access to image first-seen timestamps.
+type ImageAgeRepository interface {
+	// GetAllImageAges returns first-seen timestamps for all images on a node.
+	GetAllImageAges(nodeName string) (map[string]time.Time, error)
 }
