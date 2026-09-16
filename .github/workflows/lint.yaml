@@ -36,7 +36,7 @@ jobs:
         run: go mod tidy
 
       - name: Cache Go modules and build
-        uses: actions/cache@v4
+        uses: actions/cache@v6
         with:
           path: |
             ~/.cache/go-build
